@@ -13,14 +13,10 @@ d = {}
 for fname in sorted(files):
     with h5py.File(fname, 'r') as data:
         a = data['kspace'].shape[1]
-        if a in d.keys():
-            d[a] +=1
-        else:
-            d[a] = 1
         # for brain dataset 'AXFLAIR', 'AXT1POST', 'AXT1PRE', 'AXT1', 'AXT2'
         #for knee dataset 'CORPD_FBK' or 'CORPDFS_FBK'
         if data.attrs['acquisition'] == 'AXT2':
-            # os.system(f"cp {fname} {dist_folder + '/' + fname.name}")
+            os.system(f"cp {fname} {dist_folder + '/' + fname.name}")
             i += 1
             # print(f"{i}, {dist_folder + '/' + fname.name}")
 print(d)
