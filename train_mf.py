@@ -203,15 +203,12 @@ def train_epoch(args, epoch, model, data_loader, optimizer, writer):
 
     start_epoch = start_iter = time.perf_counter()
     print(f'a_max={args.a_max}, v_max={args.v_max}')
-    import pdb; pdb.set_trace()
     for iter, data in enumerate(data_loader):
         optimizer.zero_grad()
         # input, target, mean, std, norm = data
         input, target, mean, std = data
         input = input.to(args.device)
         target = target.to(args.device)
-        import pdb; pdb.set_trace()
-
         output = model(input)
         # output = transforms.complex_abs(output)  # complex to real
         # output = transforms.root_sum_of_squares(output, dim=1)
@@ -331,17 +328,21 @@ def visualize(args, epoch, model, data_loader, writer):
     def save_image(image, tag):
         image -= image.min()
         image /= image.max()
-        grid = torchvision.utils.make_grid(image, nrow=4, pad_value=1)
-        writer.add_image(tag, grid, epoch)
+        videos_display = []
+        for example in image.transpose(1,0):
+            grid = torchvision.utils.make_grid(example, nrow=3, pad_value=1)
+            videos_display.append(grid)
+        vid_tensor = torch.stack(videos_display, dim=0).unsqueeze(0)
+        writer.add_video(tag, vid_tensor, fps=10)
+
 
     model.eval()
     with torch.no_grad():
-        # import pdb; pdb.set_trace()
         for iter, data in enumerate(data_loader):
             # input, target, mean, std, norm = data
             input, target, mean, std = data
             input = input.to(args.device)
-            target = target.unsqueeze(1).to(args.device)
+            target = target.unsqueeze(2).to(args.device)
 
             save_image(target, 'Target')
             if epoch != 0:

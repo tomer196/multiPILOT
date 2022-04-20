@@ -31,10 +31,10 @@ class SliceData(Dataset):
                 kspace = data['kspace']
                 target = data['reconstruction_rss']
                 num_slices = kspace.shape[0]
-                # self.examples += [(fname, slice) for slice in range(5, num_slices-2)]  # knee dataset
-                if kspace.shape[1] == 16 and kspace.shape[2] > 320 and kspace.shape[3] > 320 and \
-                        target.shape[2] > 320 and target.shape[1] > 320:  # brain dataset, working only with 16 coil acquisitions
-                    self.examples += [(fname, slice) for slice in range(5, num_slices-2)]
+                self.examples += [(fname, slice) for slice in range(5, num_slices-2)]  # knee dataset
+                # if kspace.shape[1] == 16 and kspace.shape[2] > 320 and kspace.shape[3] > 320 and \
+                #         target.shape[2] > 320 and target.shape[1] > 320:  # brain dataset, working only with 16 coil acquisitions
+                #     self.examples += [(fname, slice) for slice in range(5, num_slices-2)]
 
     def __len__(self):
         return len(self.examples)

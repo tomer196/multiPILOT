@@ -76,7 +76,7 @@ class Subsampling_Layer(nn.Module):
             for shot in range(x_short.shape[0]):
                 for d in range(2):
                     self.x.data[shot, :, d] = self.interp(t1, x_short[shot, :, d], t)
-
+        import pdb; pdb.set_trace()
         x_full = self.x.reshape(-1, 2)
         input = input.permute(0, 1, 4, 2, 3)
         sub_ksp = nufft(input, x_full)

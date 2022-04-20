@@ -20,7 +20,8 @@ from data import transforms
 from data.mri_data import SliceData
 import matplotlib
 
-matplotlib.use('Agg')
+matplotlib.use( 'tkagg' )
+# matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from models.subsampling_model import Subsampling_Model
 from scipy.spatial import distance_matrix
@@ -104,8 +105,9 @@ def tsp_solver(x):
 def train_epoch(args, epoch, model, data_loader, optimizer, writer):
     model.train()
     avg_loss = 0.
+    # ignore! Not in use!
     if epoch == args.TSP_epoch and args.TSP:
-        x = model.module.get_trajectory()
+        x = model.get_trajectory()
         x = x.detach().cpu().numpy()
         for shot in range(x.shape[0]):
             x[shot, :, :] = tsp_solver(x[shot, :, :])
@@ -115,7 +117,7 @@ def train_epoch(args, epoch, model, data_loader, optimizer, writer):
         writer.add_figure('TSP_Vel', plot_acc(v, args.v_max), epoch)
         np.save('trajTSP',x)
         with torch.no_grad():
-            model.module.subsampling.x.data = torch.tensor(x, device='cuda')
+            model.subsampling.x.data = torch.tensor(x, device=args.device)
         args.a_max *= 2
         args.v_max *= 2
         args.vel_weight = 1e-3
@@ -148,50 +150,50 @@ def train_epoch(args, epoch, model, data_loader, optimizer, writer):
     #     args.acc_weight *= 10
     if args.TSP:
         if epoch < args.TSP_epoch:
-            model.module.subsampling.interp_gap = 1
+            model.subsampling.interp_gap = 1
         elif epoch < 10 + args.TSP_epoch:
-            model.module.subsampling.interp_gap = 10
+            model.subsampling.interp_gap = 10
             v0 = args.gamma * args.G_max * args.FOV * args.dt
             a0 = args.gamma * args.S_max * args.FOV * args.dt ** 2 * 1e3
             args.a_max -= a0/args.TSP_epoch
             args.v_max -= v0/args.TSP_epoch
         elif epoch == 10 + args.TSP_epoch:
-            model.module.subsampling.interp_gap = 10
+            model.subsampling.interp_gap = 10
             v0 = args.gamma * args.G_max * args.FOV * args.dt
             a0 = args.gamma * args.S_max * args.FOV * args.dt ** 2 * 1e3
             args.a_max -= a0 / args.TSP_epoch
             args.v_max -= v0 / args.TSP_epoch
         elif epoch == 15 + args.TSP_epoch:
-            model.module.subsampling.interp_gap = 10
+            model.subsampling.interp_gap = 10
             v0 = args.gamma * args.G_max * args.FOV * args.dt
             a0 = args.gamma * args.S_max * args.FOV * args.dt ** 2 * 1e3
             args.a_max -= a0 / args.TSP_epoch
             args.v_max -= v0 / args.TSP_epoch
         elif epoch == 20 + args.TSP_epoch:
-            model.module.subsampling.interp_gap = 10
+            model.subsampling.interp_gap = 10
             args.vel_weight *= 10
             args.acc_weight *= 10
         elif epoch == 23 + args.TSP_epoch:
-            model.module.subsampling.interp_gap = 5
+            model.subsampling.interp_gap = 5
             args.vel_weight *= 10
             args.acc_weight *= 10
         elif epoch == 25 + args.TSP_epoch:
-            model.module.subsampling.interp_gap = 1
+            model.subsampling.interp_gap = 1
             args.vel_weight *= 10
             args.acc_weight *= 10
     else:
         if epoch < 20:
-            model.module.subsampling.interp_gap = 32
+            model.subsampling.interp_gap = 32
         elif epoch == 20:
-            model.module.subsampling.interp_gap = 16
+            model.subsampling.interp_gap = 16
         elif epoch == 30:
-            model.module.subsampling.interp_gap = 8
+            model.subsampling.interp_gap = 8
         elif epoch == 40:
-            model.module.subsampling.interp_gap = 4
+            model.subsampling.interp_gap = 4
         elif epoch == 46:
-            model.module.subsampling.interp_gap = 2
+            model.subsampling.interp_gap = 2
         elif epoch == 50:
-            model.module.subsampling.interp_gap = 1
+            model.subsampling.interp_gap = 1
 
     start_epoch = start_iter = time.perf_counter()
     print(f'a_max={args.a_max}, v_max={args.v_max}')
@@ -200,17 +202,18 @@ def train_epoch(args, epoch, model, data_loader, optimizer, writer):
         input, target, mean, std, norm = data
         input = input.to(args.device)
         target = target.to(args.device)
-
         output = model(input)
         # output = transforms.complex_abs(output)  # complex to real
         # output = transforms.root_sum_of_squares(output, dim=1)
         output=output.squeeze()
 
-        x = model.module.get_trajectory()
+        # Loss on trajectory vel and acc
+        x = model.get_trajectory()
         v, a = get_vel_acc(x)
         acc_loss = torch.sqrt(torch.sum(torch.pow(F.softshrink(a, args.a_max).abs()+1e-8, 2)))
         vel_loss = torch.sqrt(torch.sum(torch.pow(F.softshrink(v, args.v_max).abs()+1e-8, 2)))
 
+        # target loss
         rec_loss = F.l1_loss(output, target)
         if args.TSP and epoch < args.TSP_epoch:
             loss = args.rec_weight * rec_loss
@@ -253,7 +256,7 @@ def evaluate(args, epoch, model, data_loader, writer):
                 loss = F.l1_loss(output, target)
                 losses.append(loss.item())
 
-            x = model.module.get_trajectory()
+            x = model.get_trajectory()
             v, a = get_vel_acc(x)
             acc_loss = torch.sqrt(torch.sum(torch.pow(F.softshrink(a, args.a_max), 2)))
             vel_loss = torch.sqrt(torch.sum(torch.pow(F.softshrink(v, args.v_max), 2)))
@@ -265,7 +268,7 @@ def evaluate(args, epoch, model, data_loader, writer):
             writer.add_scalar('Total_Loss',
                               rec_loss + acc_loss.detach().cpu().numpy() + vel_loss.detach().cpu().numpy(), epoch)
 
-        x = model.module.get_trajectory()
+        x = model.get_trajectory()
         v, a = get_vel_acc(x)
         if args.TSP and epoch < args.TSP_epoch:
             writer.add_figure('Scatter', plot_scatter(x.detach().cpu().numpy()), epoch)
@@ -333,7 +336,7 @@ def visualize(args, epoch, model, data_loader, writer):
                 # output = transforms.complex_abs(output)  # complex to real
                 # output = transforms.root_sum_of_squares(output, dim=1).unsqueeze(1)
 
-                corrupted = model.module.subsampling(input)
+                corrupted = model.subsampling(input)
                 corrupted = corrupted[..., 0]  # complex to real
                 cor_all = transforms.root_sum_of_squares(corrupted,dim=1).unsqueeze(1)
 
@@ -393,8 +396,8 @@ def load_model(checkpoint_file):
 
 
 def build_optim(args, model):
-    optimizer = torch.optim.Adam([{'params': model.module.subsampling.parameters(), 'lr': args.sub_lr},
-                                  {'params': model.module.reconstruction_model.parameters()}], args.lr)
+    optimizer = torch.optim.Adam([{'params': model.subsampling.parameters(), 'lr': args.sub_lr},
+                                  {'params': model.reconstruction_model.parameters()}], args.lr)
     return optimizer
 
 
