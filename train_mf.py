@@ -1,5 +1,7 @@
+import imp
 import logging
 import pathlib
+import pdb
 import random
 import shutil
 import time
@@ -24,7 +26,7 @@ import matplotlib
 matplotlib.use( 'tkagg' )
 # matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-from models.subsampling_model import Subsampling_Model
+from models.subsampling_mf_model import Subsampling_Model
 from scipy.spatial import distance_matrix
 from tsp_solver.greedy import solve_tsp
 from common.utils import get_vel_acc
@@ -358,7 +360,7 @@ def visualize(args, epoch, model, data_loader, writer):
                 save_image(corrupted[:, 0:1, :, :], 'Corrupted0')
                 save_image(corrupted[:, 1:2, :, :], 'Corrupted1')
                 save_image(cor_all, 'Corrupted')
-                save_image(torch.abs(target - output), 'Error')
+                save_image(torch.abs(target[:,:,0] - output), 'Error')
             break
 
 
@@ -380,8 +382,8 @@ def save_model(args, exp_dir, epoch, model, optimizer, best_dev_loss, is_new_bes
 
 def build_model(args):
     model = Subsampling_Model(
-        in_chans=1,
-        out_chans=1,
+        in_chans=10,
+        out_chans=10,
         chans=args.num_chans,
         num_pool_layers=args.num_pools,
         drop_prob=args.drop_prob,

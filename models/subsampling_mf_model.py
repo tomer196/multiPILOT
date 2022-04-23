@@ -124,7 +124,7 @@ class Subsampling_Model(nn.Module):
 
     def forward(self, input):
         input = self.subsampling(input)
-        input = transforms.root_sum_of_squares(transforms.complex_abs(input), dim=1).unsqueeze(1)
+        input = transforms.complex_abs(input)
         output = self.reconstruction_model(input)
         return output
 
