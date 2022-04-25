@@ -76,11 +76,19 @@ def create_datasets(args):
     )
     return dev_data, train_data
 
+def display_target(target, delay=1.):
+    i = 0
+    for img in target:
+        plt.cla()
+        plt.imshow(img, cmap='gray')
+        plt.title('frame #' + str(i))
+        plt.pause(delay)
+        i += 1
 
 def create_data_loaders(args):
     dev_data, train_data = create_datasets(args)
     display_data = [dev_data[i] for i in range(0, len(dev_data), len(dev_data) // 8)]
-
+    
     train_loader = DataLoader(
         dataset=train_data,
         batch_size=args.batch_size,
