@@ -59,8 +59,8 @@ def create_datasets(args):
     df.dropna(how='all', axis=1, inplace=True)
     rel_files = [args.data_path._str + '/' + k for k in df[df['smp'] == 'fs']['file name'].values]
     np.random.shuffle(rel_files)
-    train_ratio = 0.8
-    num_train = int(np.ceil(len(rel_files)) * train_ratio)
+    train_ratio = 0.8 # TODO: make sure the long video is in test set!
+    num_train = int(np.ceil(len(rel_files) * train_ratio))
     train_files = rel_files[:num_train]
     val_files = rel_files[num_train:]
 
@@ -357,18 +357,18 @@ def visualize(args, epoch, model, data_loader, writer):
             save_image(target, 'Target')
             if epoch != 0:
                 output = model(input.clone())
+                output = output.unsqueeze(2)
                 # output = transforms.complex_abs(output)  # complex to real
                 # output = transforms.root_sum_of_squares(output, dim=1).unsqueeze(1)
 
-                corrupted = model.subsampling(input)
-                corrupted = corrupted[..., 0]  # complex to real
-                cor_all = transforms.root_sum_of_squares(corrupted,dim=1).unsqueeze(1)
+                corrupted = model.subsampling(input).unsqueeze(2)
+                cor_all = transforms.root_sum_of_squares(corrupted, -1)
 
                 save_image(output, 'Reconstruction')
-                save_image(corrupted[:, 0:1, :, :], 'Corrupted0')
-                save_image(corrupted[:, 1:2, :, :], 'Corrupted1')
+                save_image(corrupted[..., 0], 'Corrupted_real')
+                save_image(corrupted[..., 1], 'Corrupted_im')
                 save_image(cor_all, 'Corrupted')
-                save_image(torch.abs(target[:,:,0] - output), 'Error')
+                save_image(torch.abs(target - output), 'Error')
             break
 
 
