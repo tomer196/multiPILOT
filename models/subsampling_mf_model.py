@@ -57,7 +57,7 @@ class Subsampling_Layer(nn.Module):
         self.x = torch.nn.Parameter(x, requires_grad=bool(int(trajectory_learning)))
         return
 
-    def __init__(self, decimation_rate, res,trajectory_learning,initialization,n_shots,interp_gap,SNR=False):
+    def __init__(self, decimation_rate, res,trajectory_learning,initialization,n_shots,interp_gap,SNR=False, device='cuda'):
         super().__init__()
 
         self.decimation_rate=decimation_rate
@@ -66,6 +66,7 @@ class Subsampling_Layer(nn.Module):
         self.initilaize_trajectory(trajectory_learning, initialization, n_shots)
         self.SNR=SNR
         self.interp_gap = interp_gap
+        self.device = device
 
     def forward(self, input):
         # interpolate
@@ -78,12 +79,12 @@ class Subsampling_Layer(nn.Module):
                     self.x.data[shot, :, d] = self.interp(t1, x_short[shot, :, d], t)
         x_full = self.x.reshape(-1, 2)
         input = input.permute(0, 1, 4, 2, 3)
-        sub_ksp = nufft(input, x_full)
+        sub_ksp = nufft(input, x_full, device=self.device)
         if self.SNR:
             noise_amp=0.01
             noise = noise_amp * torch.randn(sub_ksp.shape)
             sub_ksp = sub_ksp + noise.to(sub_ksp.device)
-        output = nufft_adjoint(sub_ksp, x_full, input.shape)
+        output = nufft_adjoint(sub_ksp, x_full, input.shape, device=self.device)
         return output.permute(0, 1, 3, 4, 2)
 
     def get_trajectory(self):
@@ -117,9 +118,10 @@ class Subsampling_Layer(nn.Module):
 
 class Subsampling_Model(nn.Module):
     def __init__(self, in_chans, out_chans, chans, num_pool_layers, drop_prob,decimation_rate,res,
-                 trajectory_learning,initialization,n_shots,interp_gap,SNR=False):
+                 trajectory_learning,initialization,n_shots,interp_gap,SNR=False, device='cuda'):
         super().__init__()
-        self.subsampling=Subsampling_Layer(decimation_rate, res,trajectory_learning,initialization, n_shots,interp_gap, SNR)
+        self.device = device
+        self.subsampling=Subsampling_Layer(decimation_rate, res,trajectory_learning,initialization, n_shots,interp_gap, SNR, device=device)
         self.reconstruction_model = UnetModel(in_chans, out_chans, chans, num_pool_layers, drop_prob)
 
     def forward(self, input):

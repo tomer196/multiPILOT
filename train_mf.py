@@ -36,8 +36,8 @@ logger = logging.getLogger(__name__)
 
 
 class DataTransform:
-    def __init__(self, resolution):
-        self.resolution = [384, 144]
+    def __init__(self, resolution=[384, 144]):
+        self.resolution = resolution
 
     def __call__(self, kspace, target, attrs, fname, slice):
         kspace = transforms.to_tensor(kspace)
@@ -64,14 +64,27 @@ def create_datasets(args):
     train_files = rel_files[:num_train]
     val_files = rel_files[num_train:]
 
+    if not os.path.exists('output'):
+        os.makedirs('output')
+
+    with open('output/train_val_slice','w') as f:
+        f.write("Train Files:\n")
+        for fname in train_files:
+            f.write(fname + '\n')
+        f.write('\n')
+        f.write("Validation Files:\n")
+        for fname in val_files:
+            f.write(fname + '\n')
+
+    
     train_data = SliceData(
         files=train_files,
-        transform=DataTransform(args.resolution),
+        transform=DataTransform(),
         sample_rate=args.sample_rate
     )
     dev_data = SliceData(
         files=val_files,
-        transform=DataTransform(args.resolution),
+        transform=DataTransform(),
         sample_rate=args.sample_rate
     )
     return dev_data, train_data
