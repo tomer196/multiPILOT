@@ -8,6 +8,7 @@ import time
 # os.environ["CUDA_VISIBLE_DEVICES"] = "6"
 import sys
 import pandas
+import os
 
 # sys.path.insert(0, '/home/tomerweiss/multiPILOT2')
 
