@@ -23,6 +23,7 @@ from common.args import Args
 from data import transforms
 from data.mri_mf_data import SliceData
 import matplotlib
+import h5py
 
 matplotlib.use( 'tkagg' )
 # matplotlib.use('Agg')
@@ -53,12 +54,44 @@ class DataTransform:
         return image, target, mean, std #, attrs['norm'].astype(np.float32)
 
 
+def boost_examples(files, num_frames_per_example):
+    examples_per_clip = {}
+    for fname in sorted(files):
+        curr_num_examples = 0
+        with h5py.File(fname, 'r') as data:
+            kspace = data['kspace'] # [slice, frames, coils, h,w]
+            for start_frame_index in range(kspace.shape[1] - num_frames_per_example):
+                num_slices = kspace.shape[0]
+                curr_examples = [(fname, slice, start_frame_index, start_frame_index + num_frames_per_example) for slice in range(num_slices)]
+                curr_num_examples += len(curr_examples)
+        examples_per_clip[fname] = curr_num_examples
+    
+    max_examples = np.max([k for k in examples_per_clip.values()])
+    factors = {k: np.int(np.floor(max_examples/v)) for k,v in examples_per_clip.items()}
+    return factors            
+
+def get_rel_files(files, resolution, num_frames_per_example):
+    rel_files = []
+    for fname in sorted(files):
+        with h5py.File(fname, 'r') as data:
+            kspace = data['kspace'] # [slice, frames, coils, h,w]
+            if kspace.shape[3] < resolution[0] or kspace.shape[4] < resolution[1]:
+                continue
+            if kspace.shape[1] < num_frames_per_example:
+                continue
+        rel_files.append(fname)
+    return rel_files
+
 def create_datasets(args):
     ocmr_data_attributes_location = '/home/tomerweiss/dor/OCMR/OCMR/ocmr_data_attributes.csv'
     df = pandas.read_csv(ocmr_data_attributes_location)
     df.dropna(how='all', axis=0, inplace=True)
     df.dropna(how='all', axis=1, inplace=True)
     rel_files = [args.data_path._str + '/' + k for k in df[df['smp'] == 'fs']['file name'].values]
+    rel_files = get_rel_files(rel_files, DataTransform().resolution, args.num_frames_per_example)
+    clips_factors = None
+    if args.boost:
+        clips_factors = boost_examples(rel_files, args.num_frames_per_example)
     np.random.shuffle(rel_files)
     train_ratio = 0.8 # TODO: make sure the long video is in test set!
     num_train = int(np.ceil(len(rel_files) * train_ratio))
@@ -81,12 +114,16 @@ def create_datasets(args):
     train_data = SliceData(
         files=train_files,
         transform=DataTransform(),
-        sample_rate=args.sample_rate
+        sample_rate=args.sample_rate,
+        num_frames_per_example=args.num_frames_per_example,
+        clips_factors=clips_factors
     )
     dev_data = SliceData(
         files=val_files,
         transform=DataTransform(),
-        sample_rate=args.sample_rate
+        sample_rate=args.sample_rate,
+        num_frames_per_example=args.num_frames_per_example,
+        clips_factors=clips_factors
     )
     return dev_data, train_data
 
@@ -563,6 +600,8 @@ def create_arg_parser():
                         help='Number of shots')
     parser.add_argument('--interp_gap', type=int, default=10,
                         help='number of interpolated points between 2 parameter points in the trajectory')
+    parser.add_argument('--num_frames_per_example', type=int, default=10, help='num frames per example')
+    parser.add_argument('--boost', action='store_true', default=False, help='boost to equalize num examples per file')
     return parser
 
 
