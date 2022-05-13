@@ -8,7 +8,7 @@ import data.transforms as transforms
 import numpy as np
 
 class SliceData(Dataset):
-    def __init__(self, files, transform, sample_rate=1, num_frames_per_example=10):
+    def __init__(self, files, transform, sample_rate=1, num_frames_per_example=10, clips_factors=None):
         """
         Args:
             root (pathlib.Path): Path to the dataset.
@@ -29,6 +29,7 @@ class SliceData(Dataset):
             files = files[:num_files]
         for fname in sorted(files):
             with h5py.File(fname, 'r') as data:
+                curr_clip_examples = []
                 kspace = data['kspace'] # [slice, frames, coils, h,w]
                 if kspace.shape[3] < self.transform.resolution[0] or kspace.shape[4] < self.transform.resolution[1]:
                     continue
@@ -37,8 +38,12 @@ class SliceData(Dataset):
                     continue
                 for start_frame_index in range(kspace.shape[1] - num_frames_per_example):
                     num_slices = kspace.shape[0]
-                    self.examples += [(fname, slice, start_frame_index, start_frame_index + num_frames_per_example) for slice in range(num_slices)]
-
+                    curr_clip_examples += [(fname, slice, start_frame_index, start_frame_index + num_frames_per_example) for slice in range(num_slices)]
+            curr_factor = 1
+            if clips_factors is not None:
+                curr_factor = clips_factors[fname]
+            self.examples += curr_clip_examples * curr_factor
+        random.shuffle(self.examples)
 
 
     def __len__(self):
