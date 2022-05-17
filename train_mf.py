@@ -1,11 +1,13 @@
 import imp
+import itertools
 import logging
 import pathlib
 import pdb
 import random
 import shutil
 import time
-# os.environ["CUDA_VISIBLE_DEVICES"] = "6"
+import os
+os.environ["CUDA_VISIBLE_DEVICES"] = "3"
 import sys
 import pandas
 import os
@@ -25,7 +27,7 @@ from data.mri_mf_data import SliceData
 import matplotlib
 import h5py
 
-matplotlib.use( 'tkagg' )
+#matplotlib.use( 'tkagg' )
 # matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from models.subsampling_mf_model import Subsampling_Model
@@ -169,7 +171,7 @@ def tsp_solver(x):
     return x[t, :]
 
 
-def train_epoch(args, epoch, model, data_loader, optimizer, writer):
+def train_epoch(args, epoch, model, data_loader, optimizer, writer,loader_len):
     model.train()
     avg_loss = 0.
     # ignore! Not in use!
@@ -261,16 +263,17 @@ def train_epoch(args, epoch, model, data_loader, optimizer, writer):
             model.subsampling.interp_gap = 2
         elif epoch == 50:
             model.subsampling.interp_gap = 1
-
     start_epoch = start_iter = time.perf_counter()
     print(f'a_max={args.a_max}, v_max={args.v_max}')
-    for iter, data in enumerate(data_loader):
+    for iter, data in data_loader:
         optimizer.zero_grad()
         # input, target, mean, std, norm = data
         input, target, mean, std = data
         input = input.to(args.device)
         target = target.to(args.device)
+        start = time.time()
         output = model(input)
+
         # output = transforms.complex_abs(output)  # complex to real
         # output = transforms.root_sum_of_squares(output, dim=1)
         output=output.squeeze()
@@ -297,21 +300,23 @@ def train_epoch(args, epoch, model, data_loader, optimizer, writer):
         if iter % args.report_interval == 0:
             logging.info(
                 f'Epoch = [{epoch:3d}/{args.num_epochs:3d}] '
-                f'Iter = [{iter:4d}/{len(data_loader):4d}] '
+                f'Iter = [{iter:4d}/{loader_len:4d}] '
                 f'Loss = {loss.item():.4g} Avg Loss = {avg_loss:.4g} '
                 f'rec_loss: {rec_loss:.4g}, vel_loss: {vel_loss:.4g}, acc_loss: {acc_loss:.4g}'
             )
+        if iter == loader_len - 1:
+            break
         start_iter = time.perf_counter()
     return avg_loss, time.perf_counter() - start_epoch
 
 
-def evaluate(args, epoch, model, data_loader, writer):
+def evaluate(args, epoch, model, data_loader, writer,len):
     model.eval()
     losses = []
     start = time.perf_counter()
     with torch.no_grad():
         if epoch != 0:
-            for iter, data in enumerate(data_loader):
+            for iter, data in data_loader:
                 # input, target, mean, std, norm = data
                 input, target, mean, std = data
                 input = input.to(args.device)
@@ -324,6 +329,10 @@ def evaluate(args, epoch, model, data_loader, writer):
 
                 loss = F.l1_loss(output, target)
                 losses.append(loss.item())
+                if iter == len - 1:
+                    break
+
+
 
             x = model.get_trajectory()
             v, a = get_vel_acc(x)
@@ -451,6 +460,8 @@ def build_model(args):
         trajectory_learning=args.trajectory_learning,
         initialization=args.initialization,
         SNR=args.SNR,
+        projection_iters= args.proj_iters,
+        project=args.project,
         n_shots=args.n_shots,
         interp_gap=args.interp_gap
     ).to(args.device)
@@ -509,8 +520,10 @@ def train():
     # logging.info(model)
 
     train_loader, dev_loader, display_loader = create_data_loaders(args)
+    enum_train = itertools.cycle(enumerate(train_loader))
+    enum_val = itertools.cycle(enumerate(dev_loader))
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, args.lr_step_size, args.lr_gamma)
-    dev_loss, dev_time = evaluate(args, 0, model, dev_loader, writer)
+    dev_loss, dev_time = evaluate(args, 0, model, dev_loader, writer,len(dev_loader))
     visualize(args, 0, model, display_loader, writer)
 
     for epoch in range(start_epoch, args.num_epochs):
@@ -518,8 +531,12 @@ def train():
         # if epoch>=args.TSP_epoch:
         #     optimizer.param_groups[0]['lr']=0.001
         #     optimizer.param_groups[1]['lr'] = 0.001
-        train_loss, train_time = train_epoch(args, epoch, model, train_loader, optimizer, writer)
-        dev_loss, dev_time = evaluate(args, epoch + 1, model, dev_loader, writer)
+        start = time.time()
+        train_loss, train_time = train_epoch(args, epoch, model, enum_train, optimizer, writer,len(train_loader))
+
+        start = time.time()
+        dev_loss, dev_time = evaluate(args, epoch + 1, model, enum_val, writer,len(dev_loader))
+
         visualize(args, epoch + 1, model, display_loader, writer)
 
         if epoch == args.TSP_epoch:
@@ -535,6 +552,8 @@ def train():
             f'Epoch = [{epoch:4d}/{args.num_epochs:4d}] TrainLoss = {train_loss:.4g} '
             f'DevLoss = {dev_loss:.4g} TrainTime = {train_time:.4f}s DevTime = {dev_time:.4f}s',
         )
+        end = time.time() - start
+        print(f'epoch time: {end}')
     print(args.test_name)
     print(f'Training done, best epoch: {best_epoch}')
     writer.close()
@@ -554,7 +573,7 @@ def create_arg_parser():
 
     # model parameters
     parser.add_argument('--num-pools', type=int, default=4, help='Number of U-Net pooling layers')
-    parser.add_argument('--drop-prob', type=float, default=0.0, help='Dropout probability')
+    parser.add_argument('--drop-prob', type=float, default=0.3, help='Dropout probability')
     parser.add_argument('--num-chans', type=int, default=32, help='Number of U-Net channels')
     parser.add_argument('--data-parallel', action='store_true', default=False,
                         help='If set, use multiple GPUs using data parallelism')
@@ -577,7 +596,7 @@ def create_arg_parser():
     parser.add_argument('--sub-lr', type=float, default=1e-2, help='lerning rate of the sub-samping layel')
 
     # trajectory learning parameters
-    parser.add_argument('--trajectory-learning', default=True,
+    parser.add_argument('--trajectory-learning', default=False,
                         help='trajectory_learning, if set to False, fixed trajectory, only reconstruction learning.')
     parser.add_argument('--acc-weight', type=float, default=1e-2, help='weight of the acceleration loss')
     parser.add_argument('--vel-weight', type=float, default=1e-1, help='weight of the velocity loss')
@@ -602,6 +621,9 @@ def create_arg_parser():
                         help='number of interpolated points between 2 parameter points in the trajectory')
     parser.add_argument('--num_frames_per_example', type=int, default=10, help='num frames per example')
     parser.add_argument('--boost', action='store_true', default=False, help='boost to equalize num examples per file')
+    parser.add_argument('--project', action='store_true', default=False, help='Use projection or interpolation.')
+    parser.add_argument('--proj_iters', default=10e2, help='Number of iterations for each projection run.')
+
     return parser
 
 

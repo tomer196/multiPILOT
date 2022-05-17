@@ -5,7 +5,7 @@ import data.transforms as transforms
 from pytorch_nufft.nufft import nufft, nufft_adjoint
 import numpy as np
 import matplotlib.pylab as P
-
+from python_implementation.test_run import proj_handler
 
 class Subsampling_Layer(nn.Module):
     def initilaize_trajectory(self,trajectory_learning,initialization, n_shots):
@@ -57,7 +57,8 @@ class Subsampling_Layer(nn.Module):
         self.x = torch.nn.Parameter(x, requires_grad=bool(int(trajectory_learning)))
         return
 
-    def __init__(self, decimation_rate, res,trajectory_learning,initialization,n_shots,interp_gap,SNR=False, device='cuda'):
+    def __init__(self, decimation_rate, res,trajectory_learning,initialization,n_shots,interp_gap,\
+                 projection_iterations = 10e2, project = False, SNR=False, device='cuda'):
         super().__init__()
 
         self.decimation_rate=decimation_rate
@@ -65,6 +66,7 @@ class Subsampling_Layer(nn.Module):
         self.num_measurements=res**2//decimation_rate
         self.initilaize_trajectory(trajectory_learning, initialization, n_shots)
         self.SNR=SNR
+        self.project = project
         self.interp_gap = interp_gap
         self.device = device
 
@@ -74,9 +76,13 @@ class Subsampling_Layer(nn.Module):
             t = torch.arange(0, self.x.shape[1], device=self.x.device).float()
             t1 = t[::self.interp_gap]
             x_short = self.x[:, ::self.interp_gap, :]
-            for shot in range(x_short.shape[0]):
-                for d in range(2):
-                    self.x.data[shot, :, d] = self.interp(t1, x_short[shot, :, d], t)
+            if self.project:
+                self.x.data = proj_handler(self.x.data)
+            else:
+                for shot in range(x_short.shape[0]):
+                    for d in range(2):
+                        self.x.data[shot, :, d] = self.interp(t1, x_short[shot, :, d], t)
+
         x_full = self.x.reshape(-1, 2)
         input = input.permute(0, 1, 4, 2, 3)
         sub_ksp = nufft(input, x_full, device=self.device)
@@ -118,10 +124,11 @@ class Subsampling_Layer(nn.Module):
 
 class Subsampling_Model(nn.Module):
     def __init__(self, in_chans, out_chans, chans, num_pool_layers, drop_prob,decimation_rate,res,
-                 trajectory_learning,initialization,n_shots,interp_gap,SNR=False, device='cuda'):
+                 trajectory_learning,initialization,n_shots,interp_gap, projection_iters=10e2, project=False,SNR=False, device='cuda'):
         super().__init__()
         self.device = device
-        self.subsampling=Subsampling_Layer(decimation_rate, res,trajectory_learning,initialization, n_shots,interp_gap, SNR, device=device)
+        self.subsampling=Subsampling_Layer(decimation_rate, res,trajectory_learning,initialization, n_shots,interp_gap,\
+                                           projection_iters, project, SNR, device=device)
         self.reconstruction_model = UnetModel(in_chans, out_chans, chans, num_pool_layers, drop_prob)
 
     def forward(self, input):
