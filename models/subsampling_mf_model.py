@@ -73,24 +73,47 @@ class Subsampling_Layer(nn.Module):
     def forward(self, input):
         # interpolate
         if self.interp_gap > 1:
-            t = torch.arange(0, self.x.shape[1], device=self.x.device).float()
-            t1 = t[::self.interp_gap]
-            x_short = self.x[:, ::self.interp_gap, :]
-            if self.project:
-                self.x.data = proj_handler(self.x.data)
-            else:
-                for shot in range(x_short.shape[0]):
-                    for d in range(2):
-                        self.x.data[shot, :, d] = self.interp(t1, x_short[shot, :, d], t)
+            assert(len(self.x.shape) == 3 or len(self.x.shape) == 4)
+            if len(self.x.shape) == 3:
 
-        x_full = self.x.reshape(-1, 2)
-        input = input.permute(0, 1, 4, 2, 3)
-        sub_ksp = nufft(input, x_full, device=self.device)
-        if self.SNR:
-            noise_amp=0.01
-            noise = noise_amp * torch.randn(sub_ksp.shape)
-            sub_ksp = sub_ksp + noise.to(sub_ksp.device)
-        output = nufft_adjoint(sub_ksp, x_full, input.shape, device=self.device)
+                t = torch.arange(0, self.x.shape[1], device=self.x.device).float()
+                t1 = t[::self.interp_gap]
+                x_short = self.x[:, ::self.interp_gap, :]
+                if self.project:
+                    self.x.data = proj_handler(self.x.data)
+                else:
+                    for shot in range(x_short.shape[0]):
+                        for d in range(2):
+                            self.x.data[shot, :, d] = self.interp(t1, x_short[shot, :, d], t)
+
+                x_full = self.x.reshape(-1, 2)
+                input = input.permute(0, 1, 4, 2, 3)
+                sub_ksp = nufft(input, x_full, device=self.device)
+                if self.SNR:
+                    noise_amp=0.01
+                    noise = noise_amp * torch.randn(sub_ksp.shape)
+                    sub_ksp = sub_ksp + noise.to(sub_ksp.device)
+                output = nufft_adjoint(sub_ksp, x_full, input.shape, device=self.device)
+            elif len(self.x.shape) == 4:
+                t = torch.arange(0, self.x.shape[2], device=self.x.
+                t1 = t[::self.interp_gap]
+                x_short = self.x[:, :, ::self.interp_gap, :]
+                for frame in range(x_short.shape[0]):
+                    for shot in range(x_short.shape[1]):
+                        for d in range(2):
+                            self.x.data[frame, shot, :, d] = self.i
+                output = []
+                for frame in range(x_short.shape[0]):
+                    x_full = self.x[frame].reshape(-1, 2)
+                    curr_input = input[:,frame].permute(0, 3, 1, 2)
+                    sub_ksp = nufft(curr_input.unsqueeze(1), x_full
+                    if self.SNR:
+                        noise_amp=0.01
+                        noise = noise_amp * torch.randn(sub_ksp.sha
+                        sub_ksp = sub_ksp + noise.to(sub_ksp.device
+                    output.append(nufft_adjoint(sub_ksp, x_full, cu
+                 output = torch.cat(output, dim=1)
+            
         return output.permute(0, 1, 3, 4, 2)
 
     def get_trajectory(self):
@@ -127,8 +150,11 @@ class Subsampling_Model(nn.Module):
                  trajectory_learning,initialization,n_shots,interp_gap, projection_iters=10e2, project=False,SNR=False, device='cuda'):
         super().__init__()
         self.device = device
-        self.subsampling=Subsampling_Layer(decimation_rate, res,trajectory_learning,initialization, n_shots,interp_gap,\
-                                           projection_iters, project, SNR, device=device)
+        if multiple_trajectories:
+            self.subsampling=Subsampling_Layer(decimation_rate, res)
+        else:
+            self.subsampling=Subsampling_Layer(decimation_rate, res)
+
         self.reconstruction_model = UnetModel(in_chans, out_chans, chans, num_pool_layers, drop_prob)
 
     def forward(self, input):

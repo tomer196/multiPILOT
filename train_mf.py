@@ -363,6 +363,8 @@ def evaluate(args, epoch, model, data_loader, writer,len):
 
 
 def plot_scatter(x):
+    if len(x.shape) == 4:
+        return plot_scatters(x)
     fig = plt.figure(figsize=[10, 10])
     ax = fig.add_subplot(1, 1, 1)
     ax.axis([-165, 165, -165, 165])
@@ -371,12 +373,34 @@ def plot_scatter(x):
     return fig
 
 
+def plot_scatters(x):
+    fig = plt.figure(figsize=[10, 10])
+    for frame in range(x.shape[0]):
+        ax = fig.add_subplot(2, 5, frame + 1)
+        for i in range(x.shape[1]):
+            ax.plot(x[frame, i, :, 0], x[frame, i, :, 1], '.')
+            ax.axis([-165, 165, -165, 165])
+    return fig
+
+
 def plot_trajectory(x):
+    if len(x.shape) == 4:
+        return plot_trajectories(x)
     fig = plt.figure(figsize=[10, 10])
     ax = fig.add_subplot(1, 1, 1)
     ax.axis([-165, 165, -165, 165])
     for i in range(x.shape[0]):
         ax.plot(x[i, :, 0], x[i, :, 1])
+    return fig
+
+
+def plot_trajectories(x):
+    fig = plt.figure(figsize=[10, 10])
+    for frame in range(x.shape[0]):
+        ax = fig.add_subplot(2, 5, frame + 1)
+        for i in range(x.shape[1]):
+            ax.plot(x[frame, i, :, 0], x[frame, i, :, 1])
+            ax.axis([-165, 165, -165, 165])
     return fig
 
 
@@ -463,7 +487,8 @@ def build_model(args):
         projection_iters= args.proj_iters,
         project=args.project,
         n_shots=args.n_shots,
-        interp_gap=args.interp_gap
+        interp_gap=args.interp_gap,
+        multiple_trajectories=args.multi_traj
     ).to(args.device)
     return model
 
@@ -621,9 +646,10 @@ def create_arg_parser():
                         help='number of interpolated points between 2 parameter points in the trajectory')
     parser.add_argument('--num_frames_per_example', type=int, default=10, help='num frames per example')
     parser.add_argument('--boost', action='store_true', default=False, help='boost to equalize num examples per file')
+
     parser.add_argument('--project', action='store_true', default=False, help='Use projection or interpolation.')
     parser.add_argument('--proj_iters', default=10e2, help='Number of iterations for each projection run.')
-
+    parser.add_argument('--multi_traj', action='store_true', default=False, help='allow different trajectory per frame')
     return parser
 
 
