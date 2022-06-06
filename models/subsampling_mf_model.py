@@ -11,7 +11,7 @@ class Subsampling_Layer(nn.Module):
     def initilaize_trajectory(self,trajectory_learning,initialization, n_shots):
         # x = torch.zeros(self.num_measurements, 2)
         sampel_per_shot = 3001
-        sampel_per_shot = 513
+        sampel_per_shot = 2**9+1
         if initialization == 'spiral':
             x = np.load(f'spiral/{n_shots}int_spiral_low.npy')
             x = torch.tensor(x[:, :sampel_per_shot, :]).float()
@@ -45,9 +45,11 @@ class Subsampling_Layer(nn.Module):
             x = torch.zeros(n_shots, sampel_per_shot, 2)
             theta = np.pi / n_shots
             for i in range(n_shots):
-                L = torch.arange(-160, 160, 320 / sampel_per_shot).float()
-                x[i, :, 0] = L * np.cos(theta * i)
-                x[i, :, 1] = L * np.sin(theta * i)
+                Lx = torch.arange(-144/2, 144/2, 144 / sampel_per_shot).float()
+                Ly = torch.arange(-384/2, 384/2, 384 / sampel_per_shot).float()
+                x[i, :, 0] = Lx *np.cos(theta * i)
+                x[i, :, 1] = Ly* np.sin(theta * i)
+
         elif initialization == 'uniform':
             x = (torch.rand(n_shots, sampel_per_shot, 2) - 0.5) * self.res
         elif initialization == 'gaussian':
@@ -73,47 +75,42 @@ class Subsampling_Layer(nn.Module):
     def forward(self, input):
         # interpolate
         if self.interp_gap > 1:
-            assert(len(self.x.shape) == 3 or len(self.x.shape) == 4)
-            if len(self.x.shape) == 3:
+            t = torch.arange(0, self.x.shape[1], device=self.x.device).float()
+            t1 = t[::self.interp_gap]
+            x_short = self.x[:, ::self.interp_gap, :]
+            if self.project:
+                self.x.data = proj_handler(self.x.data)
+            else:
+                for shot in range(x_short.shape[0]):
+                    for d in range(2):
+                        self.x.data[shot, :, d] = self.interp(t1, x_short[shot, :, d], t)
 
-                t = torch.arange(0, self.x.shape[1], device=self.x.device).float()
-                t1 = t[::self.interp_gap]
-                x_short = self.x[:, ::self.interp_gap, :]
-                if self.project:
-                    self.x.data = proj_handler(self.x.data)
-                else:
-                    for shot in range(x_short.shape[0]):
-                        for d in range(2):
-                            self.x.data[shot, :, d] = self.interp(t1, x_short[shot, :, d], t)
+        x_full = self.x.reshape(-1, 2)
+        input = input.permute(0, 1, 4, 2, 3)
+        sub_ksp = nufft(input, x_full, device=self.device)
+        if self.SNR:
+            noise_amp=0.01
+            noise = noise_amp * torch.randn(sub_ksp.shape)
+            sub_ksp = sub_ksp + noise.to(sub_ksp.device)
+        output = nufft_adjoint(sub_ksp, x_full, input.shape, device=self.device)
 
-                x_full = self.x.reshape(-1, 2)
-                input = input.permute(0, 1, 4, 2, 3)
-                sub_ksp = nufft(input, x_full, device=self.device)
-                if self.SNR:
-                    noise_amp=0.01
-                    noise = noise_amp * torch.randn(sub_ksp.shape)
-                    sub_ksp = sub_ksp + noise.to(sub_ksp.device)
-                output = nufft_adjoint(sub_ksp, x_full, input.shape, device=self.device)
-            elif len(self.x.shape) == 4:
-                t = torch.arange(0, self.x.shape[2], device=self.x.
-                t1 = t[::self.interp_gap]
-                x_short = self.x[:, :, ::self.interp_gap, :]
-                for frame in range(x_short.shape[0]):
-                    for shot in range(x_short.shape[1]):
-                        for d in range(2):
-                            self.x.data[frame, shot, :, d] = self.i
-                output = []
-                for frame in range(x_short.shape[0]):
-                    x_full = self.x[frame].reshape(-1, 2)
-                    curr_input = input[:,frame].permute(0, 3, 1, 2)
-                    sub_ksp = nufft(curr_input.unsqueeze(1), x_full
-                    if self.SNR:
-                        noise_amp=0.01
-                        noise = noise_amp * torch.randn(sub_ksp.sha
-                        sub_ksp = sub_ksp + noise.to(sub_ksp.device
-                    output.append(nufft_adjoint(sub_ksp, x_full, cu
-                 output = torch.cat(output, dim=1)
-            
+
+        # import matplotlib.pyplot as plt
+        # plt.imsave('source.png', torch.sqrt((input[0][5]**2).sum(dim=0)).cpu().detach().numpy(), cmap='gray')
+        # plt.imsave('corr.png', torch.sqrt((output[0][5]**2).sum(dim=0)).cpu().detach().numpy(), cmap='gray')
+        # sum = 0
+        # #PSNR
+        # for shot in range(input.shape[0]):
+        #     for frame in range(input.shape[1]):
+        #         sum+= Subsampling_Layer.PSNR(torch.sqrt((input[shot][frame]**2).sum(dim=0)),torch.sqrt((output[shot][frame]**2).sum(dim=0)))
+        # print(f'PSNR Input -> Corrupted: {sum/(input.shape[0]*input.shape[1])}')
+
+
+
+
+
+
+
         return output.permute(0, 1, 3, 4, 2)
 
     def get_trajectory(self):
@@ -142,6 +139,20 @@ class Subsampling_Layer(nn.Module):
       hh = self.h_poly((xs-x[I])/dx)
       return hh[0]*y[I] + hh[1]*m[I]*dx + hh[2]*y[I+1] + hh[3]*m[I+1]*dx
 
+    @staticmethod
+    def PSNR(im1, im2):
+        '''Calculates PSNR between two image signals.
+            Args:
+                im1 - first image, im2 - second image
+            Return:
+                scalar - PSNR value
+        '''
+        fl1 = im1.flatten()
+        fl2 = im2.flatten()
+        MSE = (((fl1 - fl2) ** 2).sum()) / (fl1.shape[0] * fl2.shape[0])
+        R = torch.max(fl1.max(), fl2.max())
+        return 10 * torch.log10((R ** 2) / MSE)
+
     def __repr__(self):
         return f'Subsampling_Layer'
 
@@ -150,17 +161,31 @@ class Subsampling_Model(nn.Module):
                  trajectory_learning,initialization,n_shots,interp_gap, projection_iters=10e2, project=False,SNR=False, device='cuda'):
         super().__init__()
         self.device = device
-        if multiple_trajectories:
-            self.subsampling=Subsampling_Layer(decimation_rate, res)
-        else:
-            self.subsampling=Subsampling_Layer(decimation_rate, res)
-
+        self.subsampling=Subsampling_Layer(decimation_rate, res,trajectory_learning,initialization, n_shots,interp_gap,\
+                                           projection_iters, project, SNR, device=device)
         self.reconstruction_model = UnetModel(in_chans, out_chans, chans, num_pool_layers, drop_prob)
 
     def forward(self, input):
+
         input = self.subsampling(input)
         input = transforms.complex_abs(input)
+
+        #plt.imsave('corrupt_mf.png', input[0][0].to('cpu').detach().numpy(), cmap='gray')
+
+        #input = transforms.root_sum_of_squares(transforms.complex_abs(input), dim=1).unsqueeze(1)
+
         output = self.reconstruction_model(input)
+
+        # from matplotlib import pyplot as plt
+        # plt.imsave('recons.png', output[0][5].cpu().detach().numpy(), cmap='gray')
+
+        #PSNR
+        # sum=0
+        # for shot in range(output.shape[0]):
+        #     for frame in range(output.shape[1]):
+        #         sum += Subsampling_Layer.PSNR(torch.sqrt((input_orig[shot][frame] ** 2).sum(dim=2)),output[shot][frame])
+        #print(f'PSNR Input -> Recons: {sum / (input.shape[0] * input.shape[1])}')
+
         return output
 
     def get_trajectory(self):

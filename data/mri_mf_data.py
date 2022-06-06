@@ -2,6 +2,7 @@ import pathlib
 import random
 from turtle import pd
 import h5py
+import torch
 from torch.utils.data import Dataset
 import ismrmrd.xsd
 import data.transforms as transforms
@@ -55,9 +56,6 @@ class SliceData(Dataset):
         with h5py.File(fname, 'r') as data:
             kspace = data['kspace'][slice, start_frame:last_frame] # (frames, coils, h, w) 
             target = data['reconstruction_rss'][slice, start_frame:last_frame] if 'reconstruction_rss' in data else None
-            
-            # image_temp, target_temp, mean_temp, std_temp = self.transform(kspace, target, data.attrs, fname, slice)
-            # print('kspace:', str(image_temp.shape), 'target:', str(target_temp.shape))
-            # kspace_float = np.stack([np.real(kspace), np.imag(kspace)], axis=-1)
-            kspace = np.sqrt(np.sum(kspace ** 2, axis=1))
+            kspace = kspace.sum(axis = 1)/kspace.shape[1]
+
             return self.transform(kspace, target, data.attrs, fname, slice)

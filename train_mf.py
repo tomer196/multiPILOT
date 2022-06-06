@@ -157,7 +157,7 @@ def create_data_loaders(args):
     )
     display_loader = DataLoader(
         dataset=display_data,
-        batch_size=16,
+        batch_size=args.batch_size,
         num_workers=20,
         pin_memory=True,
     )
@@ -488,7 +488,7 @@ def build_model(args):
         project=args.project,
         n_shots=args.n_shots,
         interp_gap=args.interp_gap,
-        multiple_trajectories=args.multi_traj
+        #multiple_trajectories=args.multi_traj
     ).to(args.device)
     return model
 
@@ -558,8 +558,6 @@ def train():
         #     optimizer.param_groups[1]['lr'] = 0.001
         start = time.time()
         train_loss, train_time = train_epoch(args, epoch, model, enum_train, optimizer, writer,len(train_loader))
-
-        start = time.time()
         dev_loss, dev_time = evaluate(args, epoch + 1, model, enum_val, writer,len(dev_loader))
 
         visualize(args, epoch + 1, model, display_loader, writer)
@@ -598,7 +596,7 @@ def create_arg_parser():
 
     # model parameters
     parser.add_argument('--num-pools', type=int, default=4, help='Number of U-Net pooling layers')
-    parser.add_argument('--drop-prob', type=float, default=0.3, help='Dropout probability')
+    parser.add_argument('--drop-prob', type=float, default=0.0, help='Dropout probability')
     parser.add_argument('--num-chans', type=int, default=32, help='Number of U-Net channels')
     parser.add_argument('--data-parallel', action='store_true', default=False,
                         help='If set, use multiple GPUs using data parallelism')
@@ -609,7 +607,7 @@ def create_arg_parser():
                              'provided, then one of those is chosen uniformly at random for each volume.')
 
     # optimization parameters
-    parser.add_argument('--batch-size', default=16, type=int, help='Mini batch size')
+    parser.add_argument('--batch-size', default=32, type=int, help='Mini batch size')
     parser.add_argument('--num-epochs', type=int, default=40, help='Number of training epochs')
     parser.add_argument('--lr', type=float, default=0.001, help='Learning rate')
     parser.add_argument('--lr-step-size', type=int, default=30,
@@ -621,7 +619,7 @@ def create_arg_parser():
     parser.add_argument('--sub-lr', type=float, default=1e-2, help='lerning rate of the sub-samping layel')
 
     # trajectory learning parameters
-    parser.add_argument('--trajectory-learning', default=False,
+    parser.add_argument('--trajectory-learning', default=True,
                         help='trajectory_learning, if set to False, fixed trajectory, only reconstruction learning.')
     parser.add_argument('--acc-weight', type=float, default=1e-2, help='weight of the acceleration loss')
     parser.add_argument('--vel-weight', type=float, default=1e-1, help='weight of the velocity loss')
@@ -640,7 +638,7 @@ def create_arg_parser():
                         help='Trajectory initialization when using PILOT (spiral, EPI, rosette, uniform, gaussian).')
     parser.add_argument('--SNR', action='store_true', default=False,
                         help='add SNR decay')
-    parser.add_argument('--n-shots', type=int, default=32,
+    parser.add_argument('--n-shots', type=int, default=16,
                         help='Number of shots')
     parser.add_argument('--interp_gap', type=int, default=10,
                         help='number of interpolated points between 2 parameter points in the trajectory')
@@ -648,7 +646,7 @@ def create_arg_parser():
     parser.add_argument('--boost', action='store_true', default=False, help='boost to equalize num examples per file')
 
     parser.add_argument('--project', action='store_true', default=False, help='Use projection or interpolation.')
-    parser.add_argument('--proj_iters', default=10e2, help='Number of iterations for each projection run.')
+    parser.add_argument('--proj_iters', default=10e1, help='Number of iterations for each projection run.')
     parser.add_argument('--multi_traj', action='store_true', default=False, help='allow different trajectory per frame')
     return parser
 
