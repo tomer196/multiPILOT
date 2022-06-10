@@ -340,7 +340,7 @@ def evaluate(args, epoch, model, data_loader, writer,len, train_loss=None, train
 
                 loss = F.l1_loss(output, target)
                 losses.append(loss.item())
-                with open(args.exp_dir + '/epoch_' + str(epoch) + '_iter_' + str(iter) + '.pickle', 'wb') as f:
+                with open(args.exp_dir + '/iter_' + str(iter) + '.pickle', 'wb') as f:
                     pickle.dump({'target': target.detach().cpu().numpy(), 'pred': output.detach().cpu().numpy()}, f)
 
                 if iter == len - 1:

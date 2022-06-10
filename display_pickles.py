@@ -18,7 +18,7 @@ def on_close(event):
 
 
 train_dir = '/home/tomerweiss/dor/multiPILOT/summary/temp2/'
-epoch = 1
+epoch = -1
 fps = 10
 
 delay = 1. / fps
@@ -29,7 +29,8 @@ for pkl in list_pickles:
     all_pickles[int(pkl.split('_')[1])]. append(pkl)
 
 if epoch < 0:
-    epoch = np.max(all_pickles.keys())
+    epoch = np.max([k for k in all_pickles.keys()])
+
 fig = plt.figure(1)
 fig.canvas.mpl_connect('close_event', on_close)
 fig.canvas.mpl_connect('key_press_event', on_press)
