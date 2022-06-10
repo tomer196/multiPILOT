@@ -11,6 +11,7 @@ os.environ["CUDA_VISIBLE_DEVICES"] = "3"
 import sys
 import pandas
 import os
+import pickle
 
 # sys.path.insert(0, '/home/tomerweiss/multiPILOT2')
 
@@ -20,6 +21,7 @@ import torch
 import torchvision
 from tensorboardX import SummaryWriter
 from torch.nn import functional as F
+from skimage.metrics import peak_signal_noise_ratio
 from torch.utils.data import DataLoader
 from common.args import Args
 from data import transforms
@@ -54,6 +56,13 @@ class DataTransform:
         target, mean, std = transforms. normalize_instance(target, eps=1e-11)
         mean = std = 0
         return image, target, mean, std #, attrs['norm'].astype(np.float32)
+
+
+def psnr(gt, pred):
+    """ Compute Peak Signal to Noise Ratio metric (PSNR) """
+    gt = gt.detach().cpu().numpy()
+    pred = pred.detach().cpu().numpy()
+    return peak_signal_noise_ratio(gt, pred,data_range = gt.max())
 
 
 def boost_examples(files, num_frames_per_example):
@@ -295,6 +304,7 @@ def train_epoch(args, epoch, model, data_loader, optimizer, writer,loader_len):
         optimizer.step()
 
         avg_loss = 0.99 * avg_loss + 0.01 * loss.item() if iter > 0 else loss.item()
+        psnr_train = psnr(target, output)
         # writer.add_scalar('TrainLoss', loss.item(), global_step + iter)
 
         if iter % args.report_interval == 0:
@@ -303,14 +313,15 @@ def train_epoch(args, epoch, model, data_loader, optimizer, writer,loader_len):
                 f'Iter = [{iter:4d}/{loader_len:4d}] '
                 f'Loss = {loss.item():.4g} Avg Loss = {avg_loss:.4g} '
                 f'rec_loss: {rec_loss:.4g}, vel_loss: {vel_loss:.4g}, acc_loss: {acc_loss:.4g}'
+                f' PSNR: {psnr(target, output)}'
             )
         if iter == loader_len - 1:
             break
         start_iter = time.perf_counter()
-    return avg_loss, time.perf_counter() - start_epoch
+    return avg_loss, time.perf_counter() - start_epoch, rec_loss, vel_loss, acc_loss, psnr_train
 
 
-def evaluate(args, epoch, model, data_loader, writer,len):
+def evaluate(args, epoch, model, data_loader, writer,len, train_loss=None, train_rec_loss=None, train_vel_loss=None, train_acc_loss=None, psnr_train=None):
     model.eval()
     losses = []
     start = time.perf_counter()
@@ -329,22 +340,39 @@ def evaluate(args, epoch, model, data_loader, writer,len):
 
                 loss = F.l1_loss(output, target)
                 losses.append(loss.item())
+                with open(args.exp_dir + '/epoch_' + str(epoch) + '_iter_' + str(iter) + '.pickle', 'wb') as f:
+                    pickle.dump({'target': target.detach().cpu().numpy(), 'pred': output.detach().cpu().numpy()}, f)
+
                 if iter == len - 1:
                     break
-
-
 
             x = model.get_trajectory()
             v, a = get_vel_acc(x)
             acc_loss = torch.sqrt(torch.sum(torch.pow(F.softshrink(a, args.a_max), 2)))
             vel_loss = torch.sqrt(torch.sum(torch.pow(F.softshrink(v, args.v_max), 2)))
             rec_loss = np.mean(losses)
+            psnr_dev = psnr(target, output)
 
-            writer.add_scalar('Rec_Loss', rec_loss, epoch)
-            writer.add_scalar('Acc_Loss', acc_loss.detach().cpu().numpy(), epoch)
-            writer.add_scalar('Vel_Loss', vel_loss.detach().cpu().numpy(), epoch)
-            writer.add_scalar('Total_Loss',
-                              rec_loss + acc_loss.detach().cpu().numpy() + vel_loss.detach().cpu().numpy(), epoch)
+            if train_rec_loss is None:
+                writer.add_scalars('Rec_Loss', {'val':rec_loss}, epoch)
+            else:
+                writer.add_scalars('Rec_Loss', {'val':rec_loss, 'train': train_rec_loss}, epoch)
+            if train_acc_loss is None:
+                writer.add_scalars('Acc_Loss', {'val':acc_loss.detach().cpu().numpy()}, epoch)
+            else:
+                writer.add_scalars('Acc_Loss', {'val':acc_loss.detach().cpu().numpy(), 'train': train_acc_loss}, epoch)
+            if train_vel_loss is None:
+                writer.add_scalars('Vel_Loss', {'val':vel_loss.detach().cpu().numpy()}, epoch)
+            else:
+                writer.add_scalars('Vel_Loss', {'val':vel_loss.detach().cpu().numpy(), 'train': train_vel_loss}, epoch)
+            if train_loss is None:
+                writer.add_scalars('Total_Loss',{'val': rec_loss + acc_loss.detach().cpu().numpy() + vel_loss.detach().cpu().numpy()}, epoch)
+            else:
+                writer.add_scalars('Total_Loss',{'val': rec_loss + acc_loss.detach().cpu().numpy() + vel_loss.detach().cpu().numpy(), 'train': train_loss}, epoch)
+            if psnr_train is None:
+                writer.add_scalars('PSNR', {'val': psnr_dev}, epoch)
+            else:
+                writer.add_scalars('PSNR', {'val': psnr_dev, 'train': psnr_train}, epoch)
 
         x = model.get_trajectory()
         v, a = get_vel_acc(x)
@@ -357,9 +385,9 @@ def evaluate(args, epoch, model, data_loader, writer,len):
         writer.add_figure('Velocity_plot', plot_acc(v.cpu().numpy(), args.v_max), epoch)
         writer.add_text('Coordinates', str(x.detach().cpu().numpy()).replace(' ', ','), epoch)
     if epoch == 0:
-        return None, time.perf_counter() - start
+        return None, time.perf_counter() - start, None
     else:
-        return np.mean(losses), time.perf_counter() - start
+        return np.mean(losses), time.perf_counter() - start, psnr_dev
 
 
 def plot_scatter(x):
@@ -548,7 +576,7 @@ def train():
     enum_train = itertools.cycle(enumerate(train_loader))
     enum_val = itertools.cycle(enumerate(dev_loader))
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, args.lr_step_size, args.lr_gamma)
-    dev_loss, dev_time = evaluate(args, 0, model, dev_loader, writer,len(dev_loader))
+    dev_loss, dev_time, psnr_dev = evaluate(args, 0, model, dev_loader, writer,len(dev_loader))
     visualize(args, 0, model, display_loader, writer)
 
     for epoch in range(start_epoch, args.num_epochs):
@@ -557,8 +585,8 @@ def train():
         #     optimizer.param_groups[0]['lr']=0.001
         #     optimizer.param_groups[1]['lr'] = 0.001
         start = time.time()
-        train_loss, train_time = train_epoch(args, epoch, model, enum_train, optimizer, writer,len(train_loader))
-        dev_loss, dev_time = evaluate(args, epoch + 1, model, enum_val, writer,len(dev_loader))
+        train_loss, train_time, train_rec_loss, train_vel_loss, train_acc_loss, psnr_train = train_epoch(args, epoch, model, enum_train, optimizer, writer,len(train_loader))
+        dev_loss, dev_time, psnr_dev = evaluate(args, epoch + 1, model, enum_val, writer,len(dev_loader), train_loss, train_rec_loss, train_vel_loss, train_acc_loss, psnr_train)
 
         visualize(args, epoch + 1, model, display_loader, writer)
 
@@ -573,7 +601,8 @@ def train():
         save_model(args, args.exp_dir, epoch, model, optimizer, best_dev_loss, is_new_best)
         logging.info(
             f'Epoch = [{epoch:4d}/{args.num_epochs:4d}] TrainLoss = {train_loss:.4g} '
-            f'DevLoss = {dev_loss:.4g} TrainTime = {train_time:.4f}s DevTime = {dev_time:.4f}s',
+            f'DevLoss = {dev_loss:.4g} TrainTime = {train_time:.4f}s DevTime = {dev_time:.4f}s'
+            f'DevPSNR = {psnr_dev:.4g}',
         )
         end = time.time() - start
         print(f'epoch time: {end}')
@@ -619,7 +648,7 @@ def create_arg_parser():
     parser.add_argument('--sub-lr', type=float, default=1e-2, help='lerning rate of the sub-samping layel')
 
     # trajectory learning parameters
-    parser.add_argument('--trajectory-learning', default=True,
+    parser.add_argument('--trajectory-learning', default=False,
                         help='trajectory_learning, if set to False, fixed trajectory, only reconstruction learning.')
     parser.add_argument('--acc-weight', type=float, default=1e-2, help='weight of the acceleration loss')
     parser.add_argument('--vel-weight', type=float, default=1e-1, help='weight of the velocity loss')
@@ -638,7 +667,7 @@ def create_arg_parser():
                         help='Trajectory initialization when using PILOT (spiral, EPI, rosette, uniform, gaussian).')
     parser.add_argument('--SNR', action='store_true', default=False,
                         help='add SNR decay')
-    parser.add_argument('--n-shots', type=int, default=16,
+    parser.add_argument('--n-shots', type=int, default=32,
                         help='Number of shots')
     parser.add_argument('--interp_gap', type=int, default=10,
                         help='number of interpolated points between 2 parameter points in the trajectory')

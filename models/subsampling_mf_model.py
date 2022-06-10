@@ -11,7 +11,7 @@ class Subsampling_Layer(nn.Module):
     def initilaize_trajectory(self,trajectory_learning,initialization, n_shots):
         # x = torch.zeros(self.num_measurements, 2)
         sampel_per_shot = 3001
-        sampel_per_shot = 2**9+1
+        sampel_per_shot = 2**10+1
         if initialization == 'spiral':
             x = np.load(f'spiral/{n_shots}int_spiral_low.npy')
             x = torch.tensor(x[:, :sampel_per_shot, :]).float()
