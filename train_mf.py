@@ -7,7 +7,7 @@ import random
 import shutil
 import time
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "3"
+os.environ["CUDA_VISIBLE_DEVICES"] = "2"
 import sys
 import pandas
 import os
@@ -516,7 +516,7 @@ def build_model(args):
         project=args.project,
         n_shots=args.n_shots,
         interp_gap=args.interp_gap,
-        #multiple_trajectories=args.multi_traj
+        multiple_trajectories=args.multi_traj
     ).to(args.device)
     return model
 
@@ -648,7 +648,7 @@ def create_arg_parser():
     parser.add_argument('--sub-lr', type=float, default=1e-2, help='lerning rate of the sub-samping layel')
 
     # trajectory learning parameters
-    parser.add_argument('--trajectory-learning', default=False,
+    parser.add_argument('--trajectory-learning', default=True,
                         help='trajectory_learning, if set to False, fixed trajectory, only reconstruction learning.')
     parser.add_argument('--acc-weight', type=float, default=1e-2, help='weight of the acceleration loss')
     parser.add_argument('--vel-weight', type=float, default=1e-1, help='weight of the velocity loss')

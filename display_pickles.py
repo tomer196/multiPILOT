@@ -5,12 +5,12 @@ import os
 import sys
 import pdb
 
-next_pickle = False
+next_example = False
 
 
 def on_press(event):
-    global next_pickle
-    next_pickle = True
+    global next_example
+    next_example = True
 
 
 def on_close(event):
@@ -42,7 +42,7 @@ for pkl in sorted(all_pickles[epoch]):
         data = pickle.load(f)
     for i in range(len(data['target'])):
         j = -1
-        while not next_pickle:
+        while not next_example:
             j = np.mod(j+1, len(data['pred'][i]))
             ax_pred.cla()
             ax_gt.cla()
@@ -52,7 +52,7 @@ for pkl in sorted(all_pickles[epoch]):
             ax_pred.imshow(data['pred'][i][j], cmap='gray', origin='lower')
             ax_gt.imshow(data['target'][i][j], cmap='gray', origin='lower')
             plt.pause(delay)
-        next_pickle = False
+        next_example = False
 
     pdb.set_trace()
     
