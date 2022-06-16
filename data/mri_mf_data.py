@@ -31,12 +31,16 @@ class SliceData(Dataset):
         for fname in sorted(files):
             with h5py.File(fname, 'r') as data:
                 curr_clip_examples = []
-                kspace = data['kspace'] # [slice, frames, coils, h,w]
-                if kspace.shape[3] < self.transform.resolution[0] or kspace.shape[4] < self.transform.resolution[1]:
-                    continue
+                if not 'aug.h5' in fname:
+                    kspace = data['kspace'] # [slice, frames, coils, h,w]
+                    if kspace.shape[3] < self.transform.resolution[0] or kspace.shape[4] < self.transform.resolution[1]:
+                        continue
 
-                if kspace.shape[1] < num_frames_per_example:
-                    continue
+                    if kspace.shape[1] < num_frames_per_example:
+                        continue
+                else:
+                    kspace = data['images']
+
                 for start_frame_index in range(kspace.shape[1] - num_frames_per_example):
                     num_slices = kspace.shape[0]
                     curr_clip_examples += [(fname, slice, start_frame_index, start_frame_index + num_frames_per_example) for slice in range(num_slices)]
@@ -54,8 +58,13 @@ class SliceData(Dataset):
         fname, slice, start_frame, last_frame = self.examples[i]
 
         with h5py.File(fname, 'r') as data:
-            kspace = data['kspace'][slice, start_frame:last_frame] # (frames, coils, h, w) 
-            target = data['reconstruction_rss'][slice, start_frame:last_frame] if 'reconstruction_rss' in data else None
-            kspace = kspace.sum(axis = 1)/kspace.shape[1]
+            if not 'aug.h5' in fname: #regular non-augmented file
+                kspace = data['kspace'][slice, start_frame:last_frame] # (frames, coils, h, w)
+                target = data['reconstruction_rss'][slice, start_frame:last_frame] if 'reconstruction_rss' in data else None
+                kspace = kspace.sum(axis = 1)/kspace.shape[1]
 
-            return self.transform(kspace, target, data.attrs, fname, slice)
+                return self.transform(kspace, target, data.attrs, fname, slice)
+            else:
+                images = data['images'][slice, start_frame:last_frame]
+                target = data['reconstruction_rss'][slice,start_frame:last_frame] if 'reconstruction_rss' in data else None
+                return images,target,0,0

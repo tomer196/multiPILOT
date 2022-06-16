@@ -7,7 +7,7 @@ import random
 import shutil
 import time
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "2"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 import sys
 import pandas
 import os
@@ -85,7 +85,10 @@ def get_rel_files(files, resolution, num_frames_per_example):
     rel_files = []
     for fname in sorted(files):
         with h5py.File(fname, 'r') as data:
-            kspace = data['kspace'] # [slice, frames, coils, h,w]
+            if not 'aug.h5' in fname:
+                kspace = data['kspace']  # [slice, frames, coils, h,w]
+            else:
+                kspace = data['images']
             if kspace.shape[3] < resolution[0] or kspace.shape[4] < resolution[1]:
                 continue
             if kspace.shape[1] < num_frames_per_example:
@@ -94,12 +97,15 @@ def get_rel_files(files, resolution, num_frames_per_example):
     return rel_files
 
 def create_datasets(args):
-    ocmr_data_attributes_location = '/home/tomerweiss/dor/OCMR/OCMR/ocmr_data_attributes.csv'
-    df = pandas.read_csv(ocmr_data_attributes_location)
-    df.dropna(how='all', axis=0, inplace=True)
-    df.dropna(how='all', axis=1, inplace=True)
-    rel_files = [args.data_path._str + '/' + k for k in df[df['smp'] == 'fs']['file name'].values]
-    rel_files = get_rel_files(rel_files, DataTransform().resolution, args.num_frames_per_example)
+    if args.augment: #all pre testing already done
+        rel_files = [str(args.data_path) + '/'+ str(fname) for fname in os.listdir(args.data_path) if os.path.isfile(os.path.join(args.data_path, fname))]
+    else:
+        ocmr_data_attributes_location = '/home/tomerweiss/dor/OCMR/OCMR/ocmr_data_attributes.csv'
+        df = pandas.read_csv(ocmr_data_attributes_location)
+        df.dropna(how='all', axis=0, inplace=True)
+        df.dropna(how='all', axis=1, inplace=True)
+        rel_files = [args.data_path._str + '/' + k for k in df[df['smp'] == 'fs']['file name'].values]
+        rel_files = get_rel_files(rel_files, DataTransform().resolution, args.num_frames_per_example)
     clips_factors = None
     if args.boost:
         clips_factors = boost_examples(rel_files, args.num_frames_per_example)
@@ -155,19 +161,19 @@ def create_data_loaders(args):
         dataset=train_data,
         batch_size=args.batch_size,
         shuffle=True,
-        num_workers=20,
+        num_workers=1 if args.augment else 20,
         pin_memory=True,
     )
     dev_loader = DataLoader(
         dataset=dev_data,
         batch_size=args.batch_size,
-        num_workers=20,
+        num_workers=1 if args.augment else 20,
         pin_memory=True,
     )
     display_loader = DataLoader(
         dataset=display_data,
         batch_size=args.batch_size,
-        num_workers=20,
+        num_workers=1 if args.augment else 20,
         pin_memory=True,
     )
     return train_loader, dev_loader, display_loader
@@ -321,7 +327,7 @@ def train_epoch(args, epoch, model, data_loader, optimizer, writer,loader_len):
     return avg_loss, time.perf_counter() - start_epoch, rec_loss, vel_loss, acc_loss, psnr_train
 
 
-def evaluate(args, epoch, model, data_loader, writer,len, train_loss=None, train_rec_loss=None, train_vel_loss=None, train_acc_loss=None, psnr_train=None):
+def evaluate(args, epoch, model, data_loader, writer,dl_len, train_loss=None, train_rec_loss=None, train_vel_loss=None, train_acc_loss=None, psnr_train=None):
     model.eval()
     losses = []
     start = time.perf_counter()
@@ -336,14 +342,14 @@ def evaluate(args, epoch, model, data_loader, writer,len, train_loss=None, train
                 output = model(input)
                 # output = transforms.complex_abs(output)  # complex to real
                 # output = transforms.root_sum_of_squares(output, dim=1)
-                output = output.squeeze()
+                #output = output.squeeze()
 
                 loss = F.l1_loss(output, target)
                 losses.append(loss.item())
-                with open(args.exp_dir + '/iter_' + str(iter) + '.pickle', 'wb') as f:
-                    pickle.dump({'target': target.detach().cpu().numpy(), 'pred': output.detach().cpu().numpy()}, f)
+                # with open(args.exp_dir + '/iter_' + str(iter) + '.pickle', 'wb') as f:
+                #     pickle.dump({'target': target.detach().cpu().numpy(), 'pred': output.detach().cpu().numpy()}, f)
 
-                if iter == len - 1:
+                if iter == dl_len - 1:
                     break
 
             x = model.get_trajectory()
@@ -373,6 +379,7 @@ def evaluate(args, epoch, model, data_loader, writer,len, train_loss=None, train
                 writer.add_scalars('PSNR', {'val': psnr_dev}, epoch)
             else:
                 writer.add_scalars('PSNR', {'val': psnr_dev, 'train': psnr_train}, epoch)
+            print(f'Dev PSNR: {psnr_dev}')
 
         x = model.get_trajectory()
         v, a = get_vel_acc(x)
@@ -516,7 +523,7 @@ def build_model(args):
         project=args.project,
         n_shots=args.n_shots,
         interp_gap=args.interp_gap,
-        multiple_trajectories=args.multi_traj
+        #multiple_trajectories=args.multi_traj
     ).to(args.device)
     return model
 
@@ -625,7 +632,7 @@ def create_arg_parser():
 
     # model parameters
     parser.add_argument('--num-pools', type=int, default=4, help='Number of U-Net pooling layers')
-    parser.add_argument('--drop-prob', type=float, default=0.0, help='Dropout probability')
+    parser.add_argument('--drop-prob', type=float, default=0.2, help='Dropout probability')
     parser.add_argument('--num-chans', type=int, default=32, help='Number of U-Net channels')
     parser.add_argument('--data-parallel', action='store_true', default=False,
                         help='If set, use multiple GPUs using data parallelism')
@@ -667,7 +674,7 @@ def create_arg_parser():
                         help='Trajectory initialization when using PILOT (spiral, EPI, rosette, uniform, gaussian).')
     parser.add_argument('--SNR', action='store_true', default=False,
                         help='add SNR decay')
-    parser.add_argument('--n-shots', type=int, default=32,
+    parser.add_argument('--n-shots', type=int, default=16,
                         help='Number of shots')
     parser.add_argument('--interp_gap', type=int, default=10,
                         help='number of interpolated points between 2 parameter points in the trajectory')
@@ -676,7 +683,8 @@ def create_arg_parser():
 
     parser.add_argument('--project', action='store_true', default=False, help='Use projection or interpolation.')
     parser.add_argument('--proj_iters', default=10e1, help='Number of iterations for each projection run.')
-    parser.add_argument('--multi_traj', action='store_true', default=False, help='allow different trajectory per frame')
+    parser.add_argument('--multi_traj', action='store_true', default=True, help='allow different trajectory per frame')
+    parser.add_argument('--augment', action='store_true', default=True, help='Use augmented files.')
     return parser
 
 
