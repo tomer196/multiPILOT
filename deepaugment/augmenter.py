@@ -13,7 +13,7 @@ def denormalize(X):
     return X_dn
 
 
-def transform(aug_type, magnitude, X,seed=42):
+def transform(aug_type, magnitude, X,seed=42, rescale_factor = 0.4):
     if aug_type == "crop":
         cr = np.random.randint(0,32)
         X_aug = iaa.Crop(px=(cr,cr),seed=seed).augment_images(X)
@@ -58,8 +58,9 @@ def transform(aug_type, magnitude, X,seed=42):
     elif aug_type == "rescale":
         X_aug = np.copy(X)
         for idx,frame in enumerate(X_aug):
-            xmean = frame * (frame > 0.1 * np.max(frame))
-            X_aug[idx] = frame - xmean
+            max = np.max(frame)
+            X_aug[idx] = frame - frame * (frame > rescale_factor * max)
+
 
 
     elif aug_type == "coarse-dropout":

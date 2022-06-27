@@ -11,7 +11,7 @@ import time
 
 #DATAPATH = 'citiesTSPexample.mat'
 #Scanner Params([Lustig et al, IEEE TMI 2008])
-def proj_handler(s0,disp=False):
+def proj_handler(s0,num_iters, alpha = 3.4, beta = 0.17,disp=False):
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
@@ -39,7 +39,7 @@ def proj_handler(s0,disp=False):
         plt.tight_layout()
         plt.show()
 
-    proj = Projector(num_iters=10e1, device=device, display_res=disp, eps_inf=0, eps2=0)
+    proj = Projector(num_iters=num_iters, device=device, display_res=disp, eps_inf=0, eps2=0)
     kc = [Constraints(Evaluator.LInf2Norm(), alpha, dt, 0), Constraints(Evaluator.LInf2Norm(), beta * dt, dt, 1)]
     proj.setKinematic(kc)
     s1 = proj(s0)

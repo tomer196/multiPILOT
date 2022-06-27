@@ -13,7 +13,7 @@ import pickle
 from gen_aug_policy import gen_policy
 from deepaugment.augmenter import transform as augts
 from random import seed
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+os.environ["CUDA_VISIBLE_DEVICES"] = "3"
 
 def parseArgs():
     parser = argparse.ArgumentParser()
@@ -36,9 +36,10 @@ def get_rel_files(files, resolution, num_frames_per_example):
 def augment_by_policy(slice, slice_target,n,aug_thresh = 0.4):
     '''augment vslice n times according to policy. Save as h5.'''
     boost_factor = 1.25
-    ops = ['crop','rotate',"horizontal-flip","vertical-flip","shear"]
-    boost = ['rescale','rotate','coarse-dropout']
-    elaborate = ["coarse-dropout",'sharpen',"elastic-transform","coarse-salt-pepper",'gamma-contrast',"perspective-transform",'rescale'] #2nd favored operations
+    #ops = ['crop','rotate',"horizontal-flip","vertical-flip","shear",rescale]
+    ops = ["horizontal-flip","vertical-flip","rescale"]
+    boost = ["rescale","horizontal-flip","vertical-flip"]
+    elaborate = ['rescale',"coarse-dropout","mean-subtract",'sharpen',"elastic-transform","coarse-salt-pepper",'gamma-contrast',"perspective-transform",'rescale'] #2nd favored operations
     requires_scale = ['coarse-dropout','brighten',"elastic-transform","perspective-transform"]
     augs = []
     slice = slice.cpu().detach().numpy()
@@ -66,13 +67,40 @@ def augment_by_policy(slice, slice_target,n,aug_thresh = 0.4):
             #     vid_im = (255*vid_im/vid_re.max()).astype('uint8')
             #     vid_target = (vid_target).astype('uint8')
             #     scaled = True
+            # from matplotlib import pyplot as plt
+            # for i in range(2):
+            #     plt.imshow(vid_target[i], cmap='gray')
+            #     plt.show()
+            #     plt.imshow(np.sqrt(vid_re[i]**2+vid_im[i]**2), cmap='gray')
+            #     plt.show()
+
 
             #separate on real and imaginary comps
-            vid_re = augts(op,1,vid_re,seed=seed)
-            #vid_im = augts(op,1,vid_im,seed=seed)
-            vid_target = augts(op,1,vid_target,seed=seed)
+            if op == 'rescale':
+
+                # vid_re = augts(op, 1, vid_re, seed=seed, rescale_factor= 0.3)
+                # vid_im = augts(op, 1, vid_im, seed=seed,rescale_factor=0.3)
+                # vid_target = augts(op, 1, vid_target, seed=seed, rescale_factor=0.3)
+                for vid in [vid_target,vid_re,vid_im]:
+                    for i in range(vid.shape[1]):
+                        for j in range(vid.shape[2]):
+                            vid[:,i,j]/= 2**((np.abs((i-200)/50)*np.abs((j-95)/30)))
+            elif op == "mean-subtract":
+                factor = 2
+                vid_re = vid_re + factor * (vid_re - np.mean(vid_re, axis=0))
+                vid_im = vid_im + factor * (vid_im - np.mean(vid_im, axis=0))
+                vid_target = vid_target + factor * (vid_target - np.mean(vid_target, axis=0))
+
+
+
+            else:
+                vid_re = augts(op,1,vid_re,seed=seed)
+                vid_im = augts(op,1,vid_im,seed=seed)
+                vid_target = augts(op,1,vid_target,seed=seed)
+
 
         #augs.append((np.sqrt(vid_re**2+vid_im**2),vid_target))
+        #vid_target = np.max(np.sqrt(vid_re**2+vid_im**2))*vid_target/(np.max(vid_target))
         augs.append((np.concatenate((vid_re.reshape(*vid_re.shape,1),vid_im.reshape(*vid_re.shape,1)),axis=-1), vid_target))
     return augs
 
@@ -113,7 +141,7 @@ for fl in rel_files:
             augims = image.unsqueeze(0).cpu()#torch.sqrt((image**2).sum(dim=-1)).unsqueeze(0).cpu()
             augtars = target.unsqueeze(0).cpu()
 
-            augs = augment_by_policy(image,target,6)
+            augs = augment_by_policy(image,target,4)
             for pair in augs:
                 slice,tar = pair
                 slice = torch.Tensor(slice).unsqueeze(0)

@@ -172,7 +172,7 @@ def create_data_loaders(args):
     )
     display_loader = DataLoader(
         dataset=display_data,
-        batch_size=args.batch_size,
+        batch_size=args.batch_size if args.batch_size > 5 else 10,
         num_workers=1 if args.augment else 20,
         pin_memory=True,
     )
@@ -287,11 +287,17 @@ def train_epoch(args, epoch, model, data_loader, optimizer, writer,loader_len):
         input = input.to(args.device)
         target = target.to(args.device)
         start = time.time()
-        output = model(input)
+        #output = model(input)
 
+
+
+        output = input.sum(dim=-1)
+        for i in range(output.shape[1]):
+            output[:,i,:,:] = model(input[:,i,:,:].unsqueeze(1)).squeeze(1)
         # output = transforms.complex_abs(output)  # complex to real
         # output = transforms.root_sum_of_squares(output, dim=1)
-        output=output.squeeze()
+        if output.shape[1] != 1:
+            output=output.squeeze()
 
         # Loss on trajectory vel and acc
         x = model.get_trajectory()
@@ -300,7 +306,8 @@ def train_epoch(args, epoch, model, data_loader, optimizer, writer,loader_len):
         vel_loss = torch.sqrt(torch.sum(torch.pow(F.softshrink(v, args.v_max).abs()+1e-8, 2)))
 
         # target loss
-        rec_loss = F.l1_loss(output, target)
+        #rec_loss = F.l1_loss(output, target)
+        rec_loss = F.mse_loss(output.to(torch.float64), target.to(torch.float64)) #+ 3*(epoch>2)*F.mse_loss((target-torch.mean(target,dim=1).unsqueeze(1)).to(torch.float64),(output-torch.mean(output,dim=1).unsqueeze(1)).to(torch.float64))
         if args.TSP and epoch < args.TSP_epoch:
             loss = args.rec_weight * rec_loss
         else:
@@ -339,12 +346,20 @@ def evaluate(args, epoch, model, data_loader, writer,dl_len, train_loss=None, tr
                 input = input.to(args.device)
                 target = target.to(args.device)
 
-                output = model(input)
+
+
+                #output = model(input)
+                output = input.sum(dim=-1)
+                for i in range(output.shape[1]):
+                    output[:, i, :, :] = model(input[:, i, :, :].unsqueeze(1)).squeeze(1)
+
+
                 # output = transforms.complex_abs(output)  # complex to real
                 # output = transforms.root_sum_of_squares(output, dim=1)
                 #output = output.squeeze()
 
-                loss = F.l1_loss(output, target)
+                #loss = F.l1_loss(output, target)
+                loss = F.mse_loss(output, target)
                 losses.append(loss.item())
                 # with open(args.exp_dir + '/iter_' + str(iter) + '.pickle', 'wb') as f:
                 #     pickle.dump({'target': target.detach().cpu().numpy(), 'pred': output.detach().cpu().numpy()}, f)
@@ -462,7 +477,7 @@ def visualize(args, epoch, model, data_loader, writer):
             grid = torchvision.utils.make_grid(example, nrow=3, pad_value=1)
             videos_display.append(grid)
         vid_tensor = torch.stack(videos_display, dim=0).unsqueeze(0)
-        writer.add_video(tag, vid_tensor, fps=10)
+        writer.add_video(tag, vid_tensor, fps=10,global_step=epoch)
 
 
     model.eval()
@@ -475,7 +490,12 @@ def visualize(args, epoch, model, data_loader, writer):
 
             save_image(target, 'Target')
             if epoch != 0:
-                output = model(input.clone())
+
+                output = input.sum(dim=-1)
+                for i in range(output.shape[1]):
+                    output[:, i, :, :] = model(input[:, i, :, :].unsqueeze(1)).squeeze(1)
+
+                #output = model(input.clone())
                 output = output.unsqueeze(2)
                 # output = transforms.complex_abs(output)  # complex to real
                 # output = transforms.root_sum_of_squares(output, dim=1).unsqueeze(1)
@@ -509,8 +529,8 @@ def save_model(args, exp_dir, epoch, model, optimizer, best_dev_loss, is_new_bes
 
 def build_model(args):
     model = Subsampling_Model(
-        in_chans=10,
-        out_chans=10,
+        in_chans=1,
+        out_chans=1,
         chans=args.num_chans,
         num_pool_layers=args.num_pools,
         drop_prob=args.drop_prob,
@@ -523,7 +543,7 @@ def build_model(args):
         project=args.project,
         n_shots=args.n_shots,
         interp_gap=args.interp_gap,
-        #multiple_trajectories=args.multi_traj
+        multiple_trajectories=args.multi_traj
     ).to(args.device)
     return model
 
@@ -621,7 +641,7 @@ def train():
 def create_arg_parser():
     parser = Args()
     parser.add_argument('--test-name', type=str, default='test', help='name for the output dir')
-    parser.add_argument('--exp-dir', type=pathlib.Path, default='summary/test',
+    parser.add_argument('--exp-dir', type=pathlib.Path, default='/mnt/walkure_public/tamirs/',
                         help='Path where model and results should be saved')
     parser.add_argument('--resume', action='store_true',
                         help='If set, resume the training from a previous model checkpoint. '
@@ -643,7 +663,7 @@ def create_arg_parser():
                              'provided, then one of those is chosen uniformly at random for each volume.')
 
     # optimization parameters
-    parser.add_argument('--batch-size', default=32, type=int, help='Mini batch size')
+    parser.add_argument('--batch-size', default=5, type=int, help='Mini batch size')
     parser.add_argument('--num-epochs', type=int, default=40, help='Number of training epochs')
     parser.add_argument('--lr', type=float, default=0.001, help='Learning rate')
     parser.add_argument('--lr-step-size', type=int, default=30,
@@ -652,7 +672,7 @@ def create_arg_parser():
                         help='Multiplicative factor of learning rate decay')
     parser.add_argument('--weight-decay', type=float, default=0.,
                         help='Strength of weight decay regularization')
-    parser.add_argument('--sub-lr', type=float, default=1e-2, help='lerning rate of the sub-samping layel')
+    parser.add_argument('--sub-lr', type=float, default=4e-2, help='lerning rate of the sub-samping layel')
 
     # trajectory learning parameters
     parser.add_argument('--trajectory-learning', default=True,
@@ -683,7 +703,7 @@ def create_arg_parser():
 
     parser.add_argument('--project', action='store_true', default=False, help='Use projection or interpolation.')
     parser.add_argument('--proj_iters', default=10e1, help='Number of iterations for each projection run.')
-    parser.add_argument('--multi_traj', action='store_true', default=True, help='allow different trajectory per frame')
+    parser.add_argument('--multi_traj', action='store_true', default=False, help='allow different trajectory per frame')
     parser.add_argument('--augment', action='store_true', default=True, help='Use augmented files.')
     return parser
 
