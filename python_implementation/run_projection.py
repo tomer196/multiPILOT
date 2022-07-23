@@ -28,7 +28,14 @@ def proj_handler(s0,num_iters, alpha = 3.4, beta = 0.17,disp=False):
 
     #data = torch.Tensor(io.loadmat(DATAPATH)['pts']).to(device) * Kmax
     start = time.time()
-    #s0 *= Kmax
+
+
+    multitraj = False
+
+    if len(s0.shape) < 4: #multitraj
+        multitraj = True
+        s0 = s0.unsqueeze(0)
+
 
     if disp:
         # plot initial interpolated trajectory (before projection)
@@ -42,8 +49,13 @@ def proj_handler(s0,num_iters, alpha = 3.4, beta = 0.17,disp=False):
     proj = Projector(num_iters=num_iters, device=device, display_res=disp, eps_inf=0, eps2=0)
     kc = [Constraints(Evaluator.LInf2Norm(), alpha, dt, 0), Constraints(Evaluator.LInf2Norm(), beta * dt, dt, 1)]
     proj.setKinematic(kc)
-    s1 = proj(s0)
+
+    s1 = torch.clone(s0)
+    for i in range(s0.shape[0]):
+        s1[i] = proj(s0[i])
     end = time.time()
     if disp:
         print(f'runtime: {end - start}')
+    if multitraj:  # multitraj
+        s1 = s1.squeeze(0)
     return s1
