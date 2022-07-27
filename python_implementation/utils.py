@@ -52,15 +52,15 @@ def projectOntoL1Ball(x,L,alpha):
 def firstDerivative(curve,dt=1):
     '''Calculate first order derivative of given curve with discretication step dt'''
     sp = torch.zeros(curve.shape)
-    sp[1:,:]=curve[1:,:]-curve[:-1,:]
+    sp[:,1:,:]=curve[:,1:,:]-curve[:,:-1,:]
     return sp.to(curve.device)/dt
 
 def primeT(curve,dt=1):
     '''calc A^T*curve, A being the derivation operator (dicrete)'''
     sp = torch.zeros(curve.shape)
-    sp[0, :] = -curve[1, :]
-    sp[1:-1, :] = -curve[2:, :] + curve[1:-1, :]
-    sp[-1, :] = curve[-1, :]
+    sp[:,0, :] = -curve[:,1, :]
+    sp[:,1:-1, :] = -curve[:,2:, :] + curve[:,1:-1, :]
+    sp[:,-1, :] = curve[:,-1, :]
     return sp.to(curve.device) / dt
 def secondDerivative(curve,dt=1):
     '''Calculate 2nd order derivative of given curve with discretication step dt'''

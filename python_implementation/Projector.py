@@ -31,7 +31,7 @@ class Projector:
         elif kc is None:
             kc = self.kc
         noc = len(kc) #num of constraints
-        sensor_num = s0.shape[0]
+        sensor_num = s0.shape[-2]
         # Compute initial distance to constraints
         if self.disp:
             single_sensor_d = torch.zeros((noc,self.nit)).to(self.device)
@@ -57,7 +57,7 @@ class Projector:
             else:
                 ATq_sum = ([kc[0].Trans_operator(Q[:,:,0],kc[0].dt) + kc[1].Trans_operator(Q[:,:, 1],kc[1].dt)])[0].to(self.device)
 
-    
+
             if self.disp:
                 CF = torch.zeros((sensor_num,self.nit, 1)).to(self.device)
                 for i in range(0,noc):
@@ -71,17 +71,18 @@ class Projector:
             z = s0 - ATq_sum
             s_star = z
 
-            R[:,:,:,0] = kc[0].eval.prox(Q[:,:, 0]+(1/self.L) * (kc[0].grad_operator(s_star)),\
+            R[:,:,:,0] = kc[0].eval.prox(Q[:,:,:, 0]+(1/self.L) * (kc[0].grad_operator(s_star)),\
                                               (1/self.L) * kc[0].bound)
-            R[:,:,:,1] = kc[1].eval.prox(Q[:, :, 1] + (1 / self.L) * (kc[1].grad_operator(s_star)), \
+
+            R[:,:,:,1] = kc[1].eval.prox(Q[:,:, :, 1] + (1 / self.L) * (kc[1].grad_operator(s_star)), \
                                          (1 / self.L) * kc[1].bound)
-            Q = R + (k) / (k + 1) * (R - R_prev)
+            Q = R + (k) / (k + 3) * (R - R_prev)
 
             # ATq_sum = torch.zeros_like(s0)
             # for i in range(0,noc):
             #     ATq_sum = ATq_sum + kc[i].Trans_operator(Q[:,:, i])
 
-            ATq_sum = kc[0].Trans_operator(Q[:,:, 0]) + kc[1].Trans_operator(Q[:,:, 1])
+            ATq_sum = kc[0].Trans_operator(Q[:,:,:, 0]) + kc[1].Trans_operator(Q[:,:,:, 1])
 
             if torch.max(torch.norm((ATq_sum-ATq_sum_last).view(sensor_num,-1),2,dim=1)).item() < self.eps2 and\
                     torch.max(torch.norm((ATq_sum-ATq_sum_last).view(sensor_num,-1),\
@@ -96,7 +97,7 @@ class Projector:
                     d[:,i, k] = torch.nn.ReLU()(kc[i].eval.norm(kc[i].grad_operator(s_star)) - kc[i].bound)
         #Compute output. Break if there's no change in output
 
-        s = s0 - ATq_sum
+        s = s0 - ATq_sum#torch.index_select(ATq_sum, 2, torch.LongTensor([1,0]).to(s0.device))#ATq_sum
 
         #display results
         if self.disp:

@@ -8,7 +8,7 @@ import shutil
 import time
 import os
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "3"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 import sys
 import pandas
 import os
@@ -643,7 +643,7 @@ def train():
     enum_train = itertools.cycle(enumerate(train_loader))
     enum_motion = itertools.cycle(enumerate(motion_train_loader))
     enum_val = itertools.cycle(enumerate(dev_loader))
-    ratio = 0.83
+    ratio = 0.75
     # scheduler = torch.optim.lr_scheduler.StepLR(optimizer, args.lr_step_size, args.lr_gamma)
     # dev_loss, dev_time, psnr_dev = evaluate(args, 0, model, dev_loader, writer, len(dev_loader))
     visualize(args, 0, models, display_loader, writer,ratio)
@@ -730,7 +730,7 @@ def create_arg_parser():
     parser.add_argument('--sub-lr', type=float, default=5e-2, help='lerning rate of the sub-samping layel')
 
     # trajectory learning parameters
-    parser.add_argument('--trajectory-learning', default=True,
+    parser.add_argument('--trajectory-learning', default=False,
                         help='trajectory_learning, if set to False, fixed trajectory, only reconstruction learning.')
     parser.add_argument('--acc-weight', type=float, default=1e-2, help='weight of the acceleration loss')
     parser.add_argument('--vel-weight', type=float, default=1e-1, help='weight of the velocity loss')
@@ -749,14 +749,14 @@ def create_arg_parser():
                         help='Trajectory initialization when using PILOT (spiral, EPI, rosette, uniform, gaussian).')
     parser.add_argument('--SNR', action='store_true', default=False,
                         help='add SNR decay')
-    parser.add_argument('--n-shots', type=int, default=6,
+    parser.add_argument('--n-shots', type=int, default=16,
                         help='Number of shots')
     parser.add_argument('--interp_gap', type=int, default=10,
                         help='number of interpolated points between 2 parameter points in the trajectory')
     parser.add_argument('--num_frames_per_example', type=int, default=10, help='num frames per example')
     parser.add_argument('--boost', action='store_true', default=False, help='boost to equalize num examples per file')
 
-    parser.add_argument('--project', action='store_true', default=False, help='Use projection or interpolation.')
+    parser.add_argument('--project', action='store_true', default=True, help='Use projection or interpolation.')
     parser.add_argument('--proj_iters', default=10e1, help='Number of iterations for each projection run.')
     parser.add_argument('--multi_traj', action='store_true', default=False, help='allow different trajectory per frame')
     parser.add_argument('--augment', action='store_true', default=True, help='Use augmented files.')

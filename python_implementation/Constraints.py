@@ -11,7 +11,7 @@ class Constraints:
     def __init__(self,evaluator:Evaluator, grad_upperbound, dt,cfg):
         self.eval = evaluator
         self.dt = dt
-        self.bound = grad_upperbound*(dt if cfg else 1)
+        self.bound = grad_upperbound*dt
         self.Trans_operator = utils.secondDerivative if cfg else utils.primeT
         self.grad_operator = utils.secondDerivative if cfg else utils.firstDerivative
 

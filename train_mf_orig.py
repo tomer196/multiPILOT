@@ -291,7 +291,8 @@ def train_epoch(args, epoch, model, data_loader, optimizer, writer, loader_len):
         # input, target, mean, std, norm = data
         input, target, mean, std = data
         input = input.to(args.device)
-        target = target.to(args.device)
+        # target = target.to(args.device)
+        target = transforms.complex_abs(input)
         start = time.time()
         # output = model(input)
 
@@ -309,9 +310,9 @@ def train_epoch(args, epoch, model, data_loader, optimizer, writer, loader_len):
         vel_loss = torch.sqrt(torch.sum(torch.pow(F.softshrink(v, args.v_max).abs() + 1e-8, 2)))
 
         # target loss
-        rec_loss = F.l1_loss(output, target)
-        #rec_loss = F.mse_loss(output.to(torch.float64), target.to(
-        #    torch.float64))  # + 3*(epoch>2)*F.mse_loss((target-torch.mean(target,dim=1).unsqueeze(1)).to(torch.float64),(output-torch.mean(output,dim=1).unsqueeze(1)).to(torch.float64))
+        #rec_loss = F.l1_loss(output, target)
+        rec_loss = F.mse_loss(output.to(torch.float64), target.to(
+        torch.float64))  # + 3*(epoch>2)*F.mse_loss((target-torch.mean(target,dim=1).unsqueeze(1)).to(torch.float64),(output-torch.mean(output,dim=1).unsqueeze(1)).to(torch.float64))
         if args.TSP and epoch < args.TSP_epoch:
             loss = args.rec_weight * rec_loss
         else:
@@ -349,7 +350,8 @@ def evaluate(args, epoch, model, data_loader, writer, dl_len, train_loss=None, t
                 # input, target, mean, std, norm = data
                 input, target, mean, std = data
                 input = input.to(args.device)
-                target = target.to(args.device)
+                # target = target.to(args.device)
+                target = transforms.complex_abs(input)
 
                 output = model(input)
 
@@ -358,8 +360,8 @@ def evaluate(args, epoch, model, data_loader, writer, dl_len, train_loss=None, t
                 # output = transforms.root_sum_of_squares(output, dim=1)
                 # output = output.squeeze()
 
-                loss = F.l1_loss(output, target)
-                #loss = F.mse_loss(output, target)
+                #loss = F.l1_loss(output, target)
+                loss = F.mse_loss(output, target)
                 losses.append(loss.item())
                 # with open(args.exp_dir + '/iter_' + str(iter) + '.pickle', 'wb') as f:
                 #     pickle.dump({'target': target.detach().cpu().numpy(), 'pred': output.detach().cpu().numpy()}, f)
@@ -646,7 +648,7 @@ def train():
 
 def create_arg_parser():
     parser = Args()
-    parser.add_argument('--test-name', type=str, default='test', help='name for the output dir')
+    parser.add_argument('--test-name', type=str, default='test/', help='name for the output dir')
     parser.add_argument('--exp-dir', type=pathlib.Path, default='/mnt/walkure_public/tamirs/',
                         help='Path where model and results should be saved')
     parser.add_argument('--resume', action='store_true',
@@ -678,7 +680,7 @@ def create_arg_parser():
                         help='Multiplicative factor of learning rate decay')
     parser.add_argument('--weight-decay', type=float, default=0.,
                         help='Strength of weight decay regularization')
-    parser.add_argument('--sub-lr', type=float, default=4e-2, help='lerning rate of the sub-samping layel')
+    parser.add_argument('--sub-lr', type=float, default=5e-2, help='lerning rate of the sub-samping layel')
 
     # trajectory learning parameters
     parser.add_argument('--trajectory-learning', default=True,
@@ -696,7 +698,7 @@ def create_arg_parser():
     parser.add_argument('--TSP', action='store_true', default=False,
                         help='Using the PILOT-TSP algorithm,if False using PILOT.')
     parser.add_argument('--TSP-epoch', default=20, type=int, help='Epoch to preform the TSP reorder at')
-    parser.add_argument('--initialization', type=str, default='radial',
+    parser.add_argument('--initialization', type=str, default='spiral',
                         help='Trajectory initialization when using PILOT (spiral, EPI, rosette, uniform, gaussian).')
     parser.add_argument('--SNR', action='store_true', default=False,
                         help='add SNR decay')
@@ -707,7 +709,7 @@ def create_arg_parser():
     parser.add_argument('--num_frames_per_example', type=int, default=10, help='num frames per example')
     parser.add_argument('--boost', action='store_true', default=False, help='boost to equalize num examples per file')
 
-    parser.add_argument('--project', action='store_true', default=False, help='Use projection or interpolation.')
+    parser.add_argument('--project', action='store_true', default=True, help='Use projection or interpolation.')
     parser.add_argument('--proj_iters', default=10e1, help='Number of iterations for each projection run.')
     parser.add_argument('--multi_traj', action='store_true', default=False, help='allow different trajectory per frame')
     parser.add_argument('--augment', action='store_true', default=True, help='Use augmented files.')

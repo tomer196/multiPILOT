@@ -95,13 +95,19 @@ class Subsampling_Layer(nn.Module):
                     x[i, index, 1] = y
                     x[i, index, 0] = j * 320 / sampel_per_shot - 160
                     index += 1
+        elif initialization == 'full':
+            x = torch.zeros(344, sampel_per_shot, 2)
+            for i, y in enumerate(range(-172, 172)):
+                x[i, :, 1] = y
+                x[i, :, 0] = torch.linspace(-122, 122, sampel_per_shot)
         elif initialization == 'radial':
             x = torch.zeros(n_shots, sampel_per_shot, 2)
             theta = np.pi / n_shots
             for i in range(n_shots):
-                L = torch.arange(-160, 160, 320 / sampel_per_shot).float()
-                x[i, :, 0] = L * np.cos(theta * i)
-                x[i, :, 1] = L * np.sin(theta * i)
+                Lx = torch.arange(-144 / 2, 144 / 2, 144 / sampel_per_shot).float()
+                Ly = torch.arange(-384 / 2, 384 / 2, 384 / sampel_per_shot).float()
+                x[i, :, 0] = Lx * np.cos(theta * i)
+                x[i, :, 1] = Ly * np.sin(theta * i)
         elif initialization == 'uniform':
             x = (torch.rand(num_trajectories, n_shots, sampel_per_shot, 2) - 0.5) * self.res
         elif initialization == 'gaussian':
@@ -142,7 +148,8 @@ class Subsampling_Layer(nn.Module):
                 t1 = t[::self.interp_gap]
                 x_short = self.x[:, ::self.interp_gap, :]
                 if self.project:
-                    self.x.data = proj_handler(self.x.data, num_iters=self.iters)
+                    with torch.no_grad():
+                        self.x.data = proj_handler(self.x.data, num_iters=self.iters)
                 else:
                     for shot in range(x_short.shape[0]):
                         for d in range(2):
@@ -161,7 +168,8 @@ class Subsampling_Layer(nn.Module):
                 t1 = t[::self.interp_gap]
                 x_short = self.x[:, :, ::self.interp_gap, :]
                 if self.project:
-                    self.x.data = proj_handler(self.x.data,num_iters=self.iters)
+                    with torch.no_grad():
+                        self.x.data = proj_handler(self.x.data,num_iters=self.iters)
                 else:
                     for frame in range(x_short.shape[0]):
                         for shot in range(x_short.shape[1]):
@@ -243,14 +251,16 @@ class Subsampling_Model(nn.Module):
 
     def forward(self, input):
         input_orig = input.clone()
-        input = self.subsampling(input)
-        input = transforms.complex_abs(input)**2
+        subampled_input = self.subsampling(input)
+        subampled_input = transforms.complex_abs(subampled_input)
 
+        residual_ratio = 0.75
         # plt.imsave('corrupt_mf.png', input[0][0].to('cpu').detach().numpy(), cmap='gray')
 
         # input = transforms.root_sum_of_squares(transforms.complex_abs(input), dim=1).unsqueeze(1)
 
-        output = self.reconstruction_model(input)
+        # output = self.reconstruction_model(input + torch.sqrt((input_orig**2).sum(dim=-1)))
+        output = self.reconstruction_model(subampled_input)
 
         # from matplotlib import pyplot as plt
         # plt.imsave('recons.png', output[0][5].cpu().detach().numpy(), cmap='gray')
@@ -262,7 +272,7 @@ class Subsampling_Model(nn.Module):
         #         sum += Subsampling_Layer.PSNR(torch.sqrt((input_orig[shot][frame] ** 2).sum(dim=2)),output[shot][frame])
         # print(f'PSNR Input -> Recons: {sum / (input.shape[0] * input.shape[1])}')
 
-        return output #+ torch.sqrt((input_orig**2).sum(dim=-1))
+        return output + subampled_input
 
     def get_trajectory(self):
         return self.subsampling.get_trajectory()
